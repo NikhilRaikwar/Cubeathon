@@ -71,9 +71,7 @@ pub enum Error {
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct PlayerProgress {
-    pub levels_cleared: u32,  // 0..3
-    pub best_time_ms:   u64,  // Total time for 3 levels (u64::MAX if not finished)
-    pub level_times:    Vec<u64>, // Time per level in ms
+    pub max_time_ms:    u64,  // Longest survival time in this session
 }
 
 /// Full session state
@@ -173,9 +171,7 @@ impl CubeathonContract {
         );
 
         let empty_progress = PlayerProgress {
-            levels_cleared: 0,
-            best_time_ms:   u64::MAX,
-            level_times:    Vec::new(&env),
+            max_time_ms:   0,
         };
 
         let state = GameState {
@@ -203,31 +199,19 @@ impl CubeathonContract {
         Ok(())
     }
 
-    // ── submit_level ──────────────────────────────────────────────────────────
-    /// Called after a player clears a level.
+    // ── submit_score ──────────────────────────────────────────────────────────
+    /// Called after a player finishes an Endless Run.
     ///
-    /// ZK verification: the proof and journal_hash prove that the player ran
-    /// the ZK circuit that encodes:
-    ///   "given session_id, player, level, time_ms, and the obstacle layout
-    ///    derived from the session seed — all walls were passed through valid gaps,
-    ///    and the cube never left the road boundary."
-    ///
-    /// journal_hash = SHA-256(session_id ‖ player_bytes ‖ level ‖ time_ms)
-    ///
-    /// For this prototype, when a ZK verifier is not deployed, the contract
-    /// accepts proof = 0x00 and verifies only the journal_hash structure.
-    pub fn submit_level(
+    /// ZK verification: proofs that the player survived for `time_ms` 
+    /// without a collision based on the session seed.
+    pub fn submit_score(
         env: Env,
         session_id:  u32,
         player:      Address,
-        level:       u32,       // 1, 2, or 3
-        time_ms:     u64,       // milliseconds to clear this level
-        proof:       Bytes,     // ZK proof bytes (or 0-byte dummy in dev)
-        journal_hash: BytesN<32>, // commitment to (session, player, level, time)
+        time_ms:     u64,       // High score for this run
+        proof:       Bytes,     // ZK proof bytes
+        journal_hash: BytesN<32>, // commitment to (session, player, time)
     ) -> Result<bool, Error> {
-        if level < 1 || level > 3 {
-            return Err(Error::InvalidLevel);
-        }
         player.require_auth();
 
         let key = DataKey::Game(session_id);
@@ -245,16 +229,7 @@ impl CubeathonContract {
             return Err(Error::NotPlayer);
         }
 
-        let progress = if is_p1 { &state.p1_progress } else { &state.p2_progress };
-
-        // Level must be the NEXT one to unlock (sequential)
-        if level != progress.levels_cleared + 1 {
-            return Err(Error::LevelNotUnlocked);
-        }
-
         // ── ZK Verification ──────────────────────────────────────────────────
-        // Only verify if proof is non-empty (real ZK scenario)
-        // Dev mode: submit proof = empty Bytes → skip verifier call
         if proof.len() > 0 {
             let verifier_addr: Address = env.storage().instance()
                 .get(&DataKey::VerifierAddress)
@@ -268,79 +243,72 @@ impl CubeathonContract {
 
         // ── Update Progress ───────────────────────────────────────────────────
         let progress_mut = if is_p1 { &mut state.p1_progress } else { &mut state.p2_progress };
-        progress_mut.levels_cleared = level;
-        progress_mut.level_times.push_back(time_ms);
-
-        let total_time: u64 = progress_mut.level_times.iter().sum();
-        let finished = level == 3;
-
-        if finished {
-            progress_mut.best_time_ms = total_time;
+        
+        // Update high score for this session if better
+        if time_ms > progress_mut.max_time_ms {
+            progress_mut.max_time_ms = time_ms;
         }
 
-        // Emit per-level event
+        // Emit high-score event
         env.events().publish(
-            (symbol_short!("level"), symbol_short!("clear")),
-            (session_id, level, time_ms),
+            (symbol_short!("score"), symbol_short!("update")),
+            (session_id, player.clone(), time_ms),
         );
-
-        // ── Check game-over: both finished ───────────────────────────────────
-        let p1_done = state.p1_progress.levels_cleared == 3;
-        let p2_done = state.p2_progress.levels_cleared == 3;
-
-        let game_over = if is_p1 && finished && !p2_done {
-            // P1 finished, P2 hasn't — P1 wins (first to complete)
-            state.winner = Some(player.clone());
-            true
-        } else if is_p2 && finished && !p1_done {
-            // P2 finished first
-            state.winner = Some(player.clone());
-            false // p1 did NOT win
-        } else if p1_done && p2_done {
-            // Both finished — compare total times
-            let p1_time = state.p1_progress.best_time_ms;
-            let p2_time = state.p2_progress.best_time_ms;
-            if p1_time <= p2_time {
-                state.winner = Some(state.player1.clone());
-                true // p1 won
-            } else {
-                state.winner = Some(state.player2.clone());
-                false // p2 won
-            }
-        } else {
-            false
-        };
-
-        if state.winner.is_some() {
-            let winner_addr = state.winner.clone().unwrap();
-            let winner_time = if winner_addr == state.player1 {
-                state.p1_progress.best_time_ms
-            } else {
-                state.p2_progress.best_time_ms
-            };
-
-            // Call Game Hub end_game
-            let hub_addr: Address = env.storage().instance()
-                .get(&DataKey::GameHubAddress)
-                .unwrap();
-            let game_hub = GameHubClient::new(&env, &hub_addr);
-            let p1_won = winner_addr == state.player1;
-            game_hub.end_game(&session_id, &p1_won);
-
-            // Add to leaderboard
-            Self::add_to_leaderboard(
-                &env,
-                winner_addr,
-                winner_time,
-                session_id,
-            );
-        }
 
         // Persist updated state
         env.storage().temporary().set(&key, &state);
         env.storage().temporary().extend_ttl(&key, GAME_TTL_LEDGERS, GAME_TTL_LEDGERS);
 
-        Ok(game_over)
+        Ok(true)
+    }
+
+    // ── end_game ──────────────────────────────────────────────────────────────
+    /// Finalize session and pay out to the survivor with the highest time.
+    pub fn end_session(
+        env: Env,
+        session_id: u32,
+    ) -> Result<Address, Error> {
+        let key = DataKey::Game(session_id);
+        let mut state: GameState = env.storage().temporary()
+            .get(&key)
+            .ok_or(Error::GameNotFound)?;
+
+        if state.winner.is_some() {
+            return Err(Error::GameAlreadyEnded);
+        }
+
+        // Compare high scores to determine winner
+        let p1_time = state.p1_progress.max_time_ms;
+        let p2_time = state.p2_progress.max_time_ms;
+
+        let winner = if p1_time >= p2_time {
+            state.player1.clone()
+        } else {
+            state.player2.clone()
+        };
+
+        state.winner = Some(winner.clone());
+        let p1_won = winner == state.player1;
+
+        // Call Game Hub end_game
+        let hub_addr: Address = env.storage().instance()
+            .get(&DataKey::GameHubAddress)
+            .unwrap();
+        let game_hub = GameHubClient::new(&env, &hub_addr);
+        game_hub.end_game(&session_id, &p1_won);
+
+        // Add to leaderboard
+        Self::add_to_leaderboard(
+            &env,
+            winner.clone(),
+            if p1_won { p1_time } else { p2_time },
+            session_id,
+        );
+
+        // Persist winner state
+        env.storage().temporary().set(&key, &state);
+        
+        Ok(winner)
     }
 
     // ── Leaderboard ───────────────────────────────────────────────────────────
@@ -362,11 +330,11 @@ impl CubeathonContract {
             .get(&DataKey::Leaderboard)
             .unwrap_or_else(|| Vec::new(env));
 
-        // Insert sorted (lowest time first)
+        // Insert sorted (HIGHEST survival time first for Endless Run)
         let mut inserted = false;
         let mut new_board: Vec<LeaderboardEntry> = Vec::new(env);
         for e in board.iter() {
-            if !inserted && entry.time_ms <= e.time_ms {
+            if !inserted && entry.time_ms >= e.time_ms {
                 new_board.push_back(entry.clone());
                 inserted = true;
             }

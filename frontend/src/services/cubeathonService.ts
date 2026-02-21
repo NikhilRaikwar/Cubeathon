@@ -27,9 +27,7 @@ import type { ContractSigner } from "../types/signer";
 // ── On-chain types (mirroring the Rust contract) ─────────────────────────────
 
 export interface PlayerProgress {
-    levels_cleared: number;    // 0-3
-    best_time_ms: bigint;    // total time when all 3 done, u64::MAX otherwise
-    level_times: bigint[];  // per-level ms [lvl1, lvl2, lvl3]
+    max_time_ms: bigint;    // Longest survival time in milliseconds
 }
 
 export interface GameState {
@@ -45,7 +43,7 @@ export interface GameState {
 
 export interface LeaderboardEntry {
     player: string;
-    time_ms: bigint;    // total time to complete all 3 levels
+    time_ms: bigint;    // survival time in ms
     session_id: number;
     timestamp: bigint;
 }
@@ -123,13 +121,8 @@ async function assembleSignSend(
 
 function scValToProgress(v: xdr.ScVal): PlayerProgress {
     const raw = scValToNative(v) as any;
-    const lvtRaw: any[] = Array.isArray(raw.level_times)
-        ? raw.level_times
-        : Array.from(raw.level_times ?? []);
     return {
-        levels_cleared: Number(raw.levels_cleared ?? 0),
-        best_time_ms: BigInt(raw.best_time_ms ?? 0),
-        level_times: lvtRaw.map((t: any) => BigInt(t)),
+        max_time_ms: BigInt(raw.max_time_ms ?? 0),
     };
 }
 
@@ -150,11 +143,7 @@ function scValToGameState(v: xdr.ScVal): GameState {
 // simpler approach – just cast the native result
 function nativeToGameState(raw: any): GameState {
     const toProgress = (p: any): PlayerProgress => ({
-        levels_cleared: Number(p?.levels_cleared ?? 0),
-        best_time_ms: BigInt(p?.best_time_ms ?? 0),
-        level_times: Array.isArray(p?.level_times)
-            ? p.level_times.map((t: any) => BigInt(t))
-            : [],
+        max_time_ms: BigInt(p?.max_time_ms ?? 0),
     });
     return {
         player1: String(raw?.player1 ?? ""),
@@ -336,12 +325,22 @@ export class CubeathonService {
         // Re-assemble with both signed auth entries
         const account = await s.getAccount(player2);
         const contract = new Contract(CUBEATHON_CONTRACT_ID);
+
+        // Update the simulation result with BOTH signed authorizations
+        // This ensures the footprint builder sees both signatures are required
+        const simWithAuths = {
+            ...sim,
+            result: {
+                ...(sim as any).result,
+                auth
+            }
+        };
+
         const freshTx = new TransactionBuilder(account, {
             fee: BASE_FEE, networkPassphrase: NETWORK_PASSPHRASE,
         }).addOperation(contract.call("start_game", ...args)).setTimeout(30).build();
 
-        const simWithUpdatedAuth = { ...sim, result: { ...(sim as any).result, auth } };
-        const assembled = StellarRpc.assembleTransaction(freshTx, simWithUpdatedAuth as any).build();
+        const assembled = StellarRpc.assembleTransaction(freshTx, simWithAuths as any).build();
 
         if (!player2Signer.signTransaction) throw new Error("signTransaction not available");
         const { signedTxXdr, error } = await player2Signer.signTransaction(
@@ -362,27 +361,24 @@ export class CubeathonService {
         }
     }
 
-    // ── Write: submit_level ────────────────────────────────────────────────────
+    // ── Write: submit_score ────────────────────────────────────────────────────
 
-    async submitLevel(
+    async submitScore(
         sessionId: number,
         player: string,
-        level: number,
         timeMs: bigint,
         signer: ContractSigner,
         proof?: Uint8Array,
         journalHash?: Uint8Array,
     ): Promise<boolean> {
-        // Dev mode: empty proof + zeroed journal_hash → contract skips ZK verifier
         const proofBytes = proof ?? new Uint8Array(0);
-        const hashBytes = journalHash ?? new Uint8Array(32); // 32 zero bytes
+        const hashBytes = journalHash ?? new Uint8Array(32);
 
         return await assembleSignSend(
-            "submit_level",
+            "submit_score",
             [
                 nativeToScVal(sessionId, { type: "u32" }),
                 nativeToScVal(player, { type: "address" }),
-                nativeToScVal(level, { type: "u32" }),
                 nativeToScVal(timeMs, { type: "u64" }),
                 xdr.ScVal.scvBytes(Buffer.from(proofBytes)),
                 xdr.ScVal.scvBytes(Buffer.from(hashBytes)),
@@ -390,6 +386,21 @@ export class CubeathonService {
             player,
             signer,
         ) as boolean;
+    }
+
+    // ── Write: end_session ───────────────────────────────────────────────────
+
+    async endSession(
+        sessionId: number,
+        adminAddress: string,
+        adminSigner: ContractSigner,
+    ): Promise<string> {
+        return await assembleSignSend(
+            "end_session",
+            [nativeToScVal(sessionId, { type: "u32" })],
+            adminAddress,
+            adminSigner,
+        ) as string;
     }
 
     // ── Utility: parse auth entry XDR → game params ─────────────────────────────
