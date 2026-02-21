@@ -1,0 +1,30 @@
+name: Build and Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  id-token: write
+  contents: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: rustup update
+      - run: rustup target add wasm32v1-none
+      - uses: stellar/stellar-cli@v22.8.1
+        with:
+          version: 22.8.1
+      - name: Build contract
+        run: |
+          stellar contract build --meta source_repo=github:NikhilRaikwar/Cubeathon
+          stellar contract optimize --wasm target/wasm32v1-none/release/cubeathon.wasm
+      - name: Build Attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: cubeathon.wasm
+          subject-path: target/wasm32v1-none/release/cubeathon.wasm
