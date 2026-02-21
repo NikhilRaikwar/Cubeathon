@@ -274,7 +274,7 @@ export function CubeathonGame({
 
         const elapsedS = s.levelTime / 1000;
         const currentBaseSpd = INITIAL_SPEED + (Math.floor(elapsedS / 10) * SPEED_SCALE_RATE);
-        const spd = s.moveUp ? currentBaseSpd * 1.5 : currentBaseSpd;
+        const spd = currentBaseSpd;
 
         // Inertia-based steering
         if (s.moveLeft) s.cubeVelX -= STEER_FORCE;
@@ -449,21 +449,7 @@ export function CubeathonGame({
                     </div>
                 </div>
 
-                {/* Key hints */}
-                <div style={{
-                    display: 'flex', gap: 6, marginBottom: '1rem', alignItems: 'center',
-                    background: '#f8fafc', borderRadius: 10, padding: '7px 12px',
-                    fontSize: '0.7rem', fontWeight: 700, color: '#64748b', flexWrap: 'wrap'
-                }}>
-                    {['A', '← LEFT', 'D', '→ RIGHT', 'W / UP = TURBO', 'SPACE = Retry'].map((k, i) => (
-                        <span key={i} style={{
-                            background: '#e2e8f0', borderRadius: 6, padding: '2px 8px'
-                        }}>{k}</span>
-                    ))}
-                    <span style={{ marginLeft: 4, color: '#94a3b8' }}>
-                        Pass through the green gap · Don't touch the red walls · Don't fall off!
-                    </span>
-                </div>
+                {/* Key hints removed for cleaner UI */}
 
                 {/* Canvas */}
                 <div style={{ position: 'relative', borderRadius: 18, overflow: 'hidden' }}>
