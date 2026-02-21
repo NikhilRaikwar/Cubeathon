@@ -1,13 +1,16 @@
 import { StrKey } from '@stellar/stellar-sdk';
-import { DEV_ADMIN_ADDRESS, DEV_PLAYER1_ADDRESS, DEV_PLAYER2_ADDRESS, NETWORK, RUNTIME_SIMULATION_SOURCE } from '@/utils/constants';
+import { DEV_PLAYER1_ADDRESS, DEV_PLAYER2_ADDRESS, NETWORK } from '@/utils/constants';
+const DEV_ADMIN_ADDRESS = import.meta.env.VITE_DEV_ADMIN_ADDRESS || '';
+const RUNTIME_SIMULATION_SOURCE = '';
+
 
 async function horizonAccountExists(address: string): Promise<boolean> {
   const horizonUrl =
     NETWORK === 'testnet'
       ? 'https://horizon-testnet.stellar.org'
       : NETWORK === 'mainnet'
-      ? 'https://horizon.stellar.org'
-      : null;
+        ? 'https://horizon.stellar.org'
+        : null;
 
   if (!horizonUrl) return true;
 

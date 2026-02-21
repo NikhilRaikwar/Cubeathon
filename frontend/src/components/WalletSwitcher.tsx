@@ -11,10 +11,9 @@ export function WalletSwitcher() {
     error,
     connectDev,
     switchPlayer,
-    getCurrentDevPlayer,
+    currentPlayer,
   } = useWallet();
 
-  const currentPlayer = getCurrentDevPlayer();
   const hasAttemptedConnection = useRef(false);
 
   // Auto-connect to Player 1 on mount (only try once)

@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@creit.tech/stellar-wallets-kit": "^1.9.5",
     "@stellar/stellar-sdk": "^14.4.2",
     "buffer": "^6.0.3",
     "lucide-react": "^0.556.0",

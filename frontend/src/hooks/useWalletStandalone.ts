@@ -1,43 +1,32 @@
 import { useCallback, useEffect } from 'react';
-import { StellarWalletsKit } from '@creit-tech/stellar-wallets-kit/sdk';
-import { defaultModules } from '@creit-tech/stellar-wallets-kit/modules/utils';
-import { KitEventType, Networks } from '@creit-tech/stellar-wallets-kit/types';
+import {
+  StellarWalletsKit,
+  allowAllModules,
+  FREIGHTER_ID,
+} from '@creit.tech/stellar-wallets-kit';
 import { useWalletStore } from '../store/walletSlice';
 import { NETWORK, NETWORK_PASSPHRASE } from '../utils/constants';
 import type { ContractSigner } from '../types/signer';
 import type { WalletError } from '@stellar/stellar-sdk/contract';
 
-const WALLET_ID = 'stellar-wallets-kit';
-let kitInitialized = false;
+const SELECTED_WALLET_KEY = 'stellar_wallet_id';
+
+let kit: StellarWalletsKit | null = null;
+
+function getKit(): StellarWalletsKit {
+  if (!kit) {
+    kit = new StellarWalletsKit({
+      modules: allowAllModules(),
+      network: NETWORK_PASSPHRASE as any,
+      selectedWalletId: localStorage.getItem(SELECTED_WALLET_KEY) ?? FREIGHTER_ID,
+    });
+  }
+  return kit;
+}
 
 function toWalletError(error?: { message: string; code: number }): WalletError | undefined {
   if (!error) return undefined;
   return { message: error.message, code: error.code };
-}
-
-function resolveNetwork(passphrase?: string): Networks {
-  if (passphrase && Object.values(Networks).includes(passphrase as Networks)) {
-    return passphrase as Networks;
-  }
-
-  return NETWORK === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
-}
-
-function ensureKitInitialized(passphrase?: string) {
-  if (typeof window === 'undefined') return;
-
-  if (!kitInitialized) {
-    StellarWalletsKit.init({
-      modules: defaultModules(),
-      network: resolveNetwork(passphrase),
-    });
-    kitInitialized = true;
-    return;
-  }
-
-  if (passphrase) {
-    StellarWalletsKit.setNetwork(resolveNetwork(passphrase));
-  }
 }
 
 export function useWalletStandalone() {
@@ -64,19 +53,23 @@ export function useWalletStandalone() {
       setError('Wallet connection is only available in the browser.');
       return;
     }
-
     try {
       setConnecting(true);
       setError(null);
-
-      ensureKitInitialized(NETWORK_PASSPHRASE);
-      const { address } = await StellarWalletsKit.authModal();
-      if (typeof address !== 'string' || !address) {
-        throw new Error('No wallet address returned');
-      }
-
-      setWallet(address, WALLET_ID, 'wallet');
-      setNetwork(NETWORK, NETWORK_PASSPHRASE);
+      const k = getKit();
+      await k.openModal({
+        onWalletSelected: async (option) => {
+          try {
+            localStorage.setItem(SELECTED_WALLET_KEY, option.id);
+            k.setWallet(option.id);
+            const { address } = await k.getAddress();
+            setWallet(address, option.id, 'wallet');
+            setNetwork(NETWORK, NETWORK_PASSPHRASE);
+          } catch (e) {
+            console.error(e);
+          }
+        },
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to connect wallet';
       setError(message);
@@ -89,10 +82,12 @@ export function useWalletStandalone() {
   const refresh = useCallback(async () => {
     try {
       if (typeof window === 'undefined') return;
-      ensureKitInitialized(NETWORK_PASSPHRASE);
-      const address = await StellarWalletsKit.getAddress();
-      if (typeof address === 'string' && address) {
-        setWallet(address, WALLET_ID, 'wallet');
+      const savedWalletId = localStorage.getItem(SELECTED_WALLET_KEY);
+      if (!savedWalletId) return;
+      const k = getKit();
+      const { address } = await k.getAddress();
+      if (address) {
+        setWallet(address, savedWalletId, 'wallet');
         setNetwork(NETWORK, NETWORK_PASSPHRASE);
       }
     } catch {
@@ -101,6 +96,7 @@ export function useWalletStandalone() {
   }, [setWallet, setNetwork]);
 
   const disconnect = useCallback(() => {
+    localStorage.removeItem(SELECTED_WALLET_KEY);
     storeDisconnect();
   }, [storeDisconnect]);
 
@@ -115,10 +111,9 @@ export function useWalletStandalone() {
   }, [setError]);
 
   const isDevModeAvailable = useCallback(() => false, []);
-
   const isDevPlayerAvailable = useCallback(() => false, []);
-
   const getCurrentDevPlayer = useCallback(() => null, []);
+  const currentPlayer = null;
 
   const getContractSigner = useCallback((): ContractSigner => {
     if (!isConnected || !publicKey) {
@@ -131,17 +126,14 @@ export function useWalletStandalone() {
         opts?: { networkPassphrase?: string; address?: string; submit?: boolean; submitUrl?: string }
       ) => {
         try {
-          ensureKitInitialized(networkPassphrase || NETWORK_PASSPHRASE);
-          const result = await StellarWalletsKit.signTransaction(xdr, {
+          const k = getKit();
+          const result = await k.signTransaction(xdr, {
             networkPassphrase: opts?.networkPassphrase || networkPassphrase || NETWORK_PASSPHRASE,
             address: opts?.address || publicKey,
-            submit: opts?.submit,
-            submitUrl: opts?.submitUrl,
           });
-
           return {
-            signedTxXdr: result.signedTxXdr || xdr,
-            signerAddress: result.signerAddress || publicKey,
+            signedTxXdr: (result as any).signedTxXdr || xdr,
+            signerAddress: (result as any).signerAddress || publicKey,
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to sign transaction';
@@ -155,15 +147,14 @@ export function useWalletStandalone() {
 
       signAuthEntry: async (authEntry: string, opts?: { networkPassphrase?: string; address?: string }) => {
         try {
-          ensureKitInitialized(networkPassphrase || NETWORK_PASSPHRASE);
-          const result = await StellarWalletsKit.signAuthEntry(authEntry, {
+          const k = getKit();
+          const result = await k.signAuthEntry(authEntry, {
             networkPassphrase: opts?.networkPassphrase || networkPassphrase || NETWORK_PASSPHRASE,
             address: opts?.address || publicKey,
           });
-
           return {
-            signedAuthEntry: result.signedAuthEntry || authEntry,
-            signerAddress: result.signerAddress || publicKey,
+            signedAuthEntry: (result as any).signedAuthEntry || authEntry,
+            signerAddress: (result as any).signerAddress || publicKey,
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to sign auth entry';
@@ -178,49 +169,10 @@ export function useWalletStandalone() {
   }, [isConnected, publicKey, networkPassphrase]);
 
   useEffect(() => {
-    const bootstrap = async () => {
-      if (typeof window === 'undefined') return;
-      ensureKitInitialized(NETWORK_PASSPHRASE);
-      try {
-        const address = await StellarWalletsKit.getAddress();
-        if (typeof address === 'string' && address) {
-          setWallet(address, WALLET_ID, 'wallet');
-          setNetwork(NETWORK, NETWORK_PASSPHRASE);
-        }
-      } catch {
-        // ignore if no active address
-      }
-    };
-
-    bootstrap().catch(() => undefined);
-
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    ensureKitInitialized(NETWORK_PASSPHRASE);
-    const unsubscribeState = StellarWalletsKit.on(KitEventType.STATE_UPDATED, (event) => {
-      const address = event.payload.address;
-      if (typeof address === 'string' && address) {
-        setWallet(address, WALLET_ID, 'wallet');
-      } else {
-        storeDisconnect();
-      }
-      setNetwork(NETWORK, event.payload.networkPassphrase || NETWORK_PASSPHRASE);
-    });
-
-    const unsubscribeDisconnect = StellarWalletsKit.on(KitEventType.DISCONNECT, () => {
-      storeDisconnect();
-    });
-
-    return () => {
-      unsubscribeState();
-      unsubscribeDisconnect();
-    };
-  }, [setWallet, setNetwork, storeDisconnect]);
+    refresh().catch(() => undefined);
+  }, [refresh]);
 
   return {
-    // State
     publicKey,
     walletId,
     walletType,
@@ -230,8 +182,7 @@ export function useWalletStandalone() {
     networkPassphrase,
     error,
     isWalletAvailable,
-
-    // Actions
+    currentPlayer,
     connect,
     refresh,
     disconnect,
