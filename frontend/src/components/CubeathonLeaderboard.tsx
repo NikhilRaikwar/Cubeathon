@@ -9,7 +9,7 @@
  *      Local level times (in-progress) shown while waiting for tx confirmation.
  */
 import { useState, useEffect, useCallback } from "react";
-import { cubeathonService, type LeaderboardEntry, type GameState } from "../services/cubeathonService";
+import { cubeathonService, type LeaderboardEntry } from "../services/cubeathonService";
 
 interface LeaderboardProps {
     sessionId: number;
@@ -26,19 +26,14 @@ export function CubeathonLeaderboard({
     sessionId, player1, player2, onClose
 }: LeaderboardProps) {
     const [hallOfFame, setHallOfFame] = useState<LeaderboardEntry[]>([]);
-    const [gameState, setGameState] = useState<GameState | null>(null);
     const [loading, setLoading] = useState(true);
     const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
     const refresh = useCallback(async () => {
         setLoading(true);
         try {
-            const [lb, gs] = await Promise.all([
-                cubeathonService.getLeaderboard(),
-                cubeathonService.getGame(sessionId),
-            ]);
+            const lb = await cubeathonService.getLeaderboard();
             setHallOfFame(lb);
-            setGameState(gs);
             setLastRefresh(new Date());
         } catch (e) {
             console.warn("[Leaderboard]", e);
@@ -91,38 +86,7 @@ export function CubeathonLeaderboard({
                     </div>
                 </div>
 
-                {/* Session High Scores (Live) */}
-                <div style={{ marginBottom: '2rem' }}>
-                    <p style={{ fontSize: '.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: '0.75rem' }}>
-                        Session Standings
-                    </p>
-                    {gameState ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {[
-                                { player: gameState.player1, time: gameState.p1_progress.max_time_ms, label: 'Player 1' },
-                                { player: gameState.player2, time: gameState.p2_progress.max_time_ms, label: 'Player 2' }
-                            ].sort((a, b) => Number(b.time - a.time)).map((p, i) => (
-                                <div key={p.player} style={{
-                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                    padding: '14px 18px', borderRadius: 16, background: i === 0 ? '#f0fdf4' : '#f8fafc',
-                                    border: `1px solid ${i === 0 ? '#bbf7d0' : '#e2e8f0'}`,
-                                }}>
-                                    <div>
-                                        <span style={{ fontSize: '.85rem', fontWeight: 800, color: '#1e293b' }}>{shortAddr(p.player)}</span>
-                                        <span style={{ marginLeft: 8, fontSize: '.65rem', fontWeight: 700, background: '#e2e8f0', padding: '2px 6px', borderRadius: 6 }}>{p.label}</span>
-                                    </div>
-                                    <div style={{ fontWeight: 900, color: i === 0 ? '#059669' : '#475569' }}>
-                                        {MS(p.time)}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p style={{ color: '#cbd5e1', fontSize: '.8rem' }}>Loading session state...</p>
-                    )}
-                </div>
-
-                {/* Hall of Fame (All Time) */}
+                {/* Global Hall of Fame (All Time) */}
                 <div>
                     <p style={{ fontSize: '.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: '0.75rem' }}>
                         Global Hall of Fame
