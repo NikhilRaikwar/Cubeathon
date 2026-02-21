@@ -1,50 +1,57 @@
 # ⬛ Cubeathon — ZK Speed Run on Stellar
 
-**Cubeathon** is a competitive speed-run game where players prove their skill through Zero-Knowledge proofs. Built for the Stellar ZK Gaming Hackathon using the **Stellar Game Studio** toolchain.
+**Cubeathon** is an elite, cheat-proof speed-run game where players prove their skill using Zero-Knowledge proofs. Built for the **Stellar ZK Gaming Hackathon 2026**, it combines high-intensity cyber-neon aesthetics with verifiable on-chain outcomes.
+
+[![ZK Powered](https://img.shields.io/badge/ZK-Powered-cyan.svg)](#) [![Soroban](https://img.shields.io/badge/Powered%20By-Soroban-purple.svg)](#) [![Fair Play](https://img.shields.io/badge/Hackathon-First%20Place%20Target-gold.svg)](#)
+
+---
 
 ## 🏆 Hackathon Submission Highlights
 
-### 1. ZK-Powered Mechanic: "Provable Speed-Run"
-In traditional speed-runs, you have to "trust" the player's video. In Cubeathon, the **Trust is built-in**.
-- **Circuit**: Written in **Noir** (located in `/zk/cubeathon_circuit`).
-- **Function**: Validates that the player's cube stayed within road boundaries and passed through generated gaps for every wall. 
-- **Verifiable Outcome**: The contract only accepts `submit_level` if the on-chain ZK verifier confirms the path's validity.
+### 1. ZK-Native Mechanic: "Provable Maneuverability"
+In traditional speed-runs, validity depends on video proof or trust in a central server. Cubeathon introduces **Provable Survival**:
+- **The Core**: A Noir-based ZK Circuit (`/zk/cubeathon_circuit`) validates the player's movement trajectory.
+- **Dynamic Seeding**: Every race generates a unique track layout from a random on-chain seed. Memoriation is impossible.
+- **Verification**: The smart contract only accepts a record if the ZK proof confirms the player navigated through the obstacles without collisions according to the specific seed of that session.
 
-### 2. Deployed On-chain Component
-- **Contract Address**: `CDCOFNIL6DSQVCUVR2DUQ345WL6OG3A6GJZHFQB3YASJES37THHYCTAV`
-- **Game Hub Integration**: Fully integrated with the required Game Hub (`CB4VZAT2U3UC6XFK3N23SKRF2NDCMP3QHJYMCHHFMZO7MRQO6DQ2EMYG`). 
-- **Workflow**:
-    - `start_game`: Locks player stakes and initializes the on-chain session.
-    - `end_game`: Distributes the jackpot to the fastest verified finisher.
+### 2. Deployed On-Chain Architecture
+- **Contract Address**: `CBPDASXZ7W6PO4OUH4HHMC7K7UTN3QHOWSNRYVITBG3ZKCH5LNK5L63M` (Stellar Testnet)
+- **Game Hub Integration**: Fully integrated with the mandatory **Stellar Game Hub** (`CB4VZAT2U3UC6XFK3N23SKRF2NDCMP3QHJYMCHHFMZO7MRQO6DQ2EMYG`).
+- **Global Leaderboard**: A decentralized Hall of Fame that only tracks ZK-verified survival times.
 
-### 3. Contract Build Verification (SEP-0055)
-This repository includes a `.github/workflows/release.yml` which implements **SEP-0055**. This provides a cryptographic link between this source code and the WASM binary deployed on Stellar, ensuring transparency for judges and players.
-
-## 🛠️ Tech Stack
-- **Smart Contracts**: Soroban (Rust SDK)
-- **ZK Circuit**: Noir Lang
-- **Frontend**: React + Vite + Stellar SDK (Raw RPC integration)
-- **Toolchain**: Stellar Game Studio (SGS)
-
-## 💰 The Jackpot Mechanism
-
-Cubeathon isn't just a race; it's a competitive staking game.
-
-1.  **Staking**: When a session is created via `start_game`, both players commit a set amount of points (the **Stakes**).
-2.  **The Jackpot**: These stakes are pooled together to form the **Session Jackpot**. You can see the live jackpot amount in the game header.
-3.  **The Race**: Players clearance 3 levels of increasing difficulty. Every level completion is verified by a **ZK Proof** on-chain to ensure the times are legitimate.
-4.  **The Payout**: Once a player completes Level 3, the contract compares the total verified times. The player with the **fastest cumulative time** is declared the winner and claims the **entire Jackpot**.
-
-## 🎮 Gameplay Flow
-1. **Connect Wallet**: Use the built-in identity switcher to simulate two players.
-2. **Start Session**: Create a new session which triggers the `start_game` multi-sig transaction.
-3. **Race**: Navigate the cube using `Arrow Keys` or `WASD`.
-4. **Instant Updates**: Your split times appear instantly on the leaderboard thanks to **Optimistic UI** logic.
-5. **Win**: Clear 3 levels to submit your final proof and claim the jackpot!
-
-## 📥 Setup & Submission
-- **Repository**: This folder contains the full source for the contracts, ZK circuits, and frontend.
-- **Verification**: The included GitHub Action (`.github/workflows/release.yml`) implements **SEP-0055** for on-chain build verification.
+### 3. Build Security & Transparency
+- **SEP-0055 Compliance**: Implements cryptographic linkage between source code and the WASM binary via GitHub Workflows.
+- **Verifiable Provenance**: Check `.github/workflows/release.yml` for the automated build and attestation pipeline.
 
 ---
-Built for the **Stellar ZK Gaming Hackathon 2026**.
+
+## 🛠️ The Technology
+- **ZK Circuit**: Noir Lang (Poseidon Hashing for identity/seed commitment).
+- **Smart Contracts**: Soroban (Rust SDK).
+- **Frontend**: React + Vite + Vanilla CSS.
+- **Aesthetic**: High-Intensity landscape 3D projection, Cyber-Neon theme.
+
+---
+
+## 🏁 How to Play
+
+1.  **Connect**: Switch between Dev Identities (Player 1 / Player 2) to simulate the competitive environment.
+2.  **Start**: Initialize a session which calls the global **Game Hub** contract to record the start.
+3.  **Race**: Control your cyan cube with `A/D` or `Arrow Keys`. 
+4.  **Navigate**: Dodge the red emissive obstacle clusters. Remember, obstacles cover 80% of the road—speed and precision are mandatory!
+5.  **Finish**: Cross the 1500m finish line at maximum velocity.
+6.  **Verify**: Submit your ZK Proof to finalize your standing on the **Winning Leaderboard**.
+
+---
+
+## � Game Logic & Fairness
+
+### No Memoriation, Just Skill
+The game avoids the "fixed track" pitfall. Because the seed is randomized every attempt, every race is a new puzzle. You can't learn the pattern; you have to have the reflexes.
+
+### Provable Outcomes
+Bypassing the client-side logic via standard hacks (like disabling collision detection) will result in a failed ZK Proof on-chain, as the circuit re-simulates the track from the seed and finds the collision.
+
+---
+
+Built with ❤️ for the **Stellar ZK Gaming Hackathon 2026**.

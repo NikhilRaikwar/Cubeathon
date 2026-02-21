@@ -335,7 +335,7 @@ export default function App() {
             onGameComplete={(w) => {
               const jackpot = (activeGame?.player1Points ?? 0n) + (activeGame?.player2Points ?? 0n);
               const prize = (Number(jackpot) / 1e7).toFixed(2);
-              setSuccess(`🏁 Game Over! Winner: ${shortAddr(w)} won the jackpot of ${prize} Points!`);
+              setSuccess(`🏁 Session Finalized! Winner: ${shortAddr(w)} survived longer and took the ${prize} Points jackpot!`);
               setGameActive(false);
             }}
           />
@@ -403,7 +403,7 @@ export default function App() {
             <h2 style={{ fontFamily: 'var(--font-serif)', marginBottom: '1rem' }}>Documentation</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '.9rem', lineHeight: 1.7 }}>
               <div className="notice"><strong>Setup</strong><br />Add secrets to <code>.env</code>:<br /><code>VITE_DEV_PLAYER1_SECRET=S...</code><br /><code>VITE_DEV_PLAYER2_SECRET=S...</code><br /><code>VITE_CUBEATHON_CONTRACT_ID=C...</code></div>
-              <div className="notice"><strong>Two-Player Flow</strong><br />1. Player 1: <em>Create &amp; Export</em> → copies signed XDR.<br />2. Player 2: <em>Import Auth Entry</em> → pastes XDR → joins, submits tx on-chain.<br />3. Both play; level completions are ZK-proven on Soroban.</div>
+              <div className="notice"><strong>Two-Player Flow</strong><br />1. Player 1: <em>Create &amp; Export</em> → copies signed XDR.<br />2. Player 2: <em>Import Auth Entry</em> → pastes XDR → joins, submits tx on-chain.<br />3. Both play; survival times are ZK-proven and the best survivor takes the jackpot.</div>
               <div className="notice"><strong>Game Hub</strong><br /><code style={{ wordBreak: 'break-all' }}>CB4VZAT2U3UC6XFK3N23SKRF2NDCMP3QHJYMCHHFMZO7MRQO6DQ2EMYG</code></div>
             </div>
           </div>
@@ -445,7 +445,7 @@ export default function App() {
               Cubeathon ⬛
             </h2>
             <p style={{ color: 'var(--color-ink-muted)', fontWeight: 600, fontSize: '.9rem', margin: '4px 0 0' }}>
-              Navigate your cube through obstacle walls at increasing speed!
+              Survive the obstacles at increasing speed! Highest survival time wins the jackpot.
             </p>
             <p style={{ fontFamily: 'var(--font-mono)', fontSize: '.72rem', color: 'var(--color-ink-muted)', margin: '3px 0 0' }}>
               Session ID: {sessionId}

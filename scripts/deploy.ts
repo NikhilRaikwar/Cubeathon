@@ -9,6 +9,9 @@
 
 import { $ } from "bun";
 import { existsSync } from "node:fs";
+
+// Ensure stellar is in PATH for Bun.$
+$.env({ ...process.env, PATH: `/usr/local/bin:/usr/bin:${process.env.PATH}` });
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
