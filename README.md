@@ -25,6 +25,17 @@ In traditional speed-runs, validity depends on video proof or trust in a central
 
 ---
 
+## ⚡ Powered by Stellar Game Studio
+
+**Cubeathon** is built upon the **[Stellar Game Studio (SGS)](https://jamesbachini.github.io/Stellar-Game-Studio/)** toolchain. SGS simplifies building onchain games and streamlines the Stellar game lifecycle, providing a fast starting point for shipping playable web games with robust onchain components.
+
+By pairing Soroban smart contracts with a modern frontend workflow, SGS reduced our boilerplate and allowed us to focus entirely on the high-intensity gameplay and ZK security logic. Our integration with SGS satisfies the hackathon requirements and leveraging its two-player game simulation was pivotal for our development.
+
+- **SGS Documentation**: [jamesbachini.github.io/Stellar-Game-Studio/](https://jamesbachini.github.io/Stellar-Game-Studio/)
+- **SGS Repository**: [github.com/jamesbachini/Stellar-Game-Studio](https://github.com/jamesbachini/Stellar-Game-Studio)
+
+---
+
 ## 🛠️ The Technology
 - **ZK Circuit**: Noir Lang (Poseidon Hashing for identity/seed commitment).
 - **Smart Contracts**: Soroban (Rust SDK).
