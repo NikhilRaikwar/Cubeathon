@@ -1,0 +1,28 @@
+{
+  "name": "cubeathon-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3001",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^14.4.2",
+    "buffer": "^6.0.3",
+    "lucide-react": "^0.556.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.2",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.7"
+  }
+}
