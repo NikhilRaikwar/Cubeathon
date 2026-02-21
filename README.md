@@ -2,7 +2,7 @@
 
 **Cubeathon** is an elite, cheat-proof speed-run game where players prove their skill using Zero-Knowledge proofs. Built for the **Stellar ZK Gaming Hackathon 2026**, it combines high-intensity cyber-neon aesthetics with verifiable on-chain outcomes.
 
-[![ZK Powered](https://img.shields.io/badge/ZK-Powered-cyan.svg)](#) [![Soroban](https://img.shields.io/badge/Powered%20By-Soroban-purple.svg)](#) [![Fair Play](https://img.shields.io/badge/Hackathon-First%20Place%20Target-gold.svg)](#)
+[![ZK Powered](https://img.shields.io/badge/ZK-Powered-cyan.svg)](#) [![Noir ZK](https://img.shields.io/badge/Noir-ZK--Proofs-blue.svg)](#) [![Soroban](https://img.shields.io/badge/Powered%20By-Soroban-purple.svg)](#) [![ZK Native](https://img.shields.io/badge/ZK%20Native-Provable%20Outcomes-orange.svg)](#)
 
 ---
 
