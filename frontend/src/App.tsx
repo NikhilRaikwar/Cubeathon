@@ -4,20 +4,27 @@ import studioLogo from './assets/logo.svg';
 import { useWallet } from './hooks/useWallet';
 import { cubeathonService } from './services/cubeathonService';
 import { devWalletService, DevWalletService } from './services/devWalletService';
-import { WalletSwitcher } from './components/WalletSwitcher';
-import { DEV_PLAYER1_ADDRESS, DEV_PLAYER2_ADDRESS } from './utils/constants';
 import './App.css';
 
 // ── Stable memoized header
 interface AppHeaderProps {
   page: 'home' | 'games' | 'docs';
+  publicKey: string | null;
+  isConnected: boolean;
+  isConnecting: boolean;
+  currentPlayer: 1 | 2;
+  walletError: string | null;
+  isDevModeAvailable: boolean;
   onNavigate: (p: 'home' | 'games' | 'docs') => void;
+  onSwitchPlayer: () => void;
+  onConnect: () => void;
 }
 
 const AppHeader = memo(function AppHeader({
-  page,
-  onNavigate,
+  page, publicKey, isConnected, isConnecting, currentPlayer, walletError,
+  isDevModeAvailable, onNavigate, onSwitchPlayer, onConnect,
 }: AppHeaderProps) {
+  const shortAddr = (a: string) => a ? `${a.slice(0, 8)}...${a.slice(-4)}` : '—';
   return (
     <header className="studio-header">
       <div className="brand">
@@ -42,7 +49,34 @@ const AppHeader = memo(function AppHeader({
       </div>
       <div className="header-actions">
         <div className="network-pill">Testnet</div>
-        <WalletSwitcher />
+        <div className="wallet-switcher">
+          <div className="wallet-info">
+            {!isConnected ? (
+              <div className="wallet-status connecting">
+                <span className="status-indicator" />
+                <span style={{ fontSize: '.8rem', color: 'var(--color-ink-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {isConnecting ? 'Connecting…' : walletError || 'Not connected'}
+                  {!isConnecting && !isDevModeAvailable && (
+                    <button onClick={onConnect} className="tiny-connect-btn">Connect Wallet</button>
+                  )}
+                </span>
+              </div>
+            ) : (
+              <div className="wallet-status connected">
+                <span className="status-indicator" />
+                <div className="wallet-details">
+                  <div className="wallet-label">{isDevModeAvailable ? `Connected Player ${currentPlayer}` : 'Connected'}</div>
+                  <div className="wallet-address">{shortAddr(publicKey ?? '')}</div>
+                </div>
+                {isDevModeAvailable && (
+                  <button className="switch-button" onClick={onSwitchPlayer}>
+                    Switch to Player {currentPlayer === 1 ? 2 : 1}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </header>
   );
@@ -56,6 +90,7 @@ export default function App() {
   const {
     publicKey, isConnected, isConnecting,
     currentPlayer,
+    connect,
     connectDev,
     switchPlayer,
     getContractSigner, quickstartAvailable,
@@ -70,7 +105,6 @@ export default function App() {
   // Create-mode form state
   const [createMode, setCreateMode] = useState<CreateMode>('create');
   const [player1Address, setPlayer1Address] = useState(publicKey || '');
-  const [player2Address, setPlayer2Address] = useState(DEV_PLAYER2_ADDRESS || '');
   const [player1Points, setPlayer1Points] = useState('0.1');
 
   // Auth entry export (Player 1 → Player 2)
@@ -106,17 +140,6 @@ export default function App() {
     if (publicKey) setPlayer1Address(publicKey);
   }, [publicKey]);
 
-  // Set default P2 if P1 changes and they happen to be same
-  useEffect(() => {
-    if (player1Address === player2Address) {
-      if (player1Address === DEV_PLAYER1_ADDRESS) {
-        setPlayer2Address(DEV_PLAYER2_ADDRESS);
-      } else {
-        setPlayer2Address(DEV_PLAYER1_ADDRESS);
-      }
-    }
-  }, [player1Address]);
-
   const parsePoints = (s: string): bigint | null => {
     try {
       const cleaned = s.replace(/[^\d.]/g, '');
@@ -135,17 +158,17 @@ export default function App() {
     const p1Points = parsePoints(player1Points);
     if (!p1Points || p1Points <= 0n) { setError('Enter a valid points amount.'); return; }
 
-    if (!player2Address || player2Address === player1Address) {
-      setError('Player 2 address must be valid and DIFFERENT from yours.');
-      return;
+    // Placeholder P2 for simulation
+    let simulationP2 = 'GDO5KFBDKWAGPP3MC72BGBGMBA3UKYKLRTUUYX3AJLCGRVE2LDSEBDK7';
+    if (simulationP2 === publicKey) {
+      simulationP2 = 'GBD2IS3IQCZV565EMUF6TP74LQ5GFHJDH3GF3YTCF34XHLS7BMK6JATX';
     }
 
     try {
       setLoading(true);
       const signer = getContractSigner();
-      // Use the actual user-inputted player2Address for simulation source too
       const xdr = await cubeathonService.prepareStartGame(
-        sessionId, player1Address, player2Address, p1Points, p1Points, signer
+        sessionId, player1Address, simulationP2, p1Points, p1Points, signer
       );
       setExportedXDR(xdr);
       setSuccess('Auth entry ready! Copy the XDR below and send it to Player 2.');
@@ -154,7 +177,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [isConnected, publicKey, player1Address, player2Address, player1Points, sessionId, getContractSigner]);
+  }, [isConnected, publicKey, player1Address, player1Points, sessionId, getContractSigner]);
 
   const handleQuickstart = useCallback(async () => {
     setError(null); setSuccess(null);
@@ -262,7 +285,18 @@ export default function App() {
           <div className="studio-orb orb-1" /><div className="studio-orb orb-2" />
           <div className="studio-orb orb-3" /><div className="studio-grid" />
         </div>
-        <AppHeader page={page} onNavigate={navigate} />
+        <AppHeader
+          page={page}
+          onNavigate={navigate}
+          publicKey={publicKey}
+          isConnected={isConnected}
+          isConnecting={isConnecting}
+          currentPlayer={currentPlayer as 1 | 2}
+          walletError={walletError}
+          isDevModeAvailable={isDevModeAvailable}
+          onSwitchPlayer={() => switchPlayer(currentPlayer === 1 ? 2 : 1)}
+          onConnect={() => connect()}
+        />
         <main className="studio-main">
           <CubeathonGame
             key={`${publicKey}-${activeGame?.sessionId ?? sessionId}`}
@@ -295,7 +329,18 @@ export default function App() {
           <div className="studio-orb orb-1" /><div className="studio-orb orb-2" />
           <div className="studio-orb orb-3" /><div className="studio-grid" />
         </div>
-        <AppHeader page={page} onNavigate={navigate} />
+        <AppHeader
+          page={page}
+          onNavigate={navigate}
+          publicKey={publicKey}
+          isConnected={isConnected}
+          isConnecting={isConnecting}
+          currentPlayer={currentPlayer as 1 | 2}
+          walletError={walletError}
+          isDevModeAvailable={isDevModeAvailable}
+          onSwitchPlayer={() => switchPlayer(currentPlayer === 1 ? 2 : 1)}
+          onConnect={() => connect()}
+        />
         <main className="studio-main">
           <div className="card" style={{ maxWidth: 640, margin: '0 auto' }}>
             <h2 style={{ fontFamily: 'var(--font-serif)', marginBottom: '1rem' }}>Welcome to the Studio</h2>
@@ -318,7 +363,18 @@ export default function App() {
           <div className="studio-orb orb-1" /><div className="studio-orb orb-2" />
           <div className="studio-orb orb-3" /><div className="studio-grid" />
         </div>
-        <AppHeader page={page} onNavigate={navigate} />
+        <AppHeader
+          page={page}
+          onNavigate={navigate}
+          publicKey={publicKey}
+          isConnected={isConnected}
+          isConnecting={isConnecting}
+          currentPlayer={currentPlayer as 1 | 2}
+          walletError={walletError}
+          isDevModeAvailable={isDevModeAvailable}
+          onSwitchPlayer={() => switchPlayer(currentPlayer === 1 ? 2 : 1)}
+          onConnect={() => connect()}
+        />
         <main className="studio-main">
           <div className="card" style={{ maxWidth: 720, margin: '0 auto' }}>
             <h2 style={{ fontFamily: 'var(--font-serif)', marginBottom: '1rem' }}>Documentation</h2>
@@ -346,7 +402,18 @@ export default function App() {
         <div className="studio-orb orb-1" /><div className="studio-orb orb-2" />
         <div className="studio-orb orb-3" /><div className="studio-grid" />
       </div>
-      <AppHeader page={page} onNavigate={navigate} />
+      <AppHeader
+        page={page}
+        onNavigate={navigate}
+        publicKey={publicKey}
+        isConnected={isConnected}
+        isConnecting={isConnecting}
+        currentPlayer={currentPlayer as 1 | 2}
+        walletError={walletError}
+        isDevModeAvailable={isDevModeAvailable}
+        onSwitchPlayer={() => switchPlayer(currentPlayer === 1 ? 2 : 1)}
+        onConnect={() => connect()}
+      />
       <main className="studio-main">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: 12 }}>
           <div>
@@ -395,23 +462,10 @@ export default function App() {
           </div>
           {createMode === 'create' && !exportedXDR && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={lbl}>Your Address (Player 1)</label>
-                  <input type="text" value={player1Address} onChange={e => setPlayer1Address(e.target.value.trim())} placeholder="G..." style={inp} />
-                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                    <button style={tinyBtn} onClick={() => { setPlayer1Address(DEV_PLAYER1_ADDRESS); if (isDevModeAvailable) switchPlayer(1).catch(() => { }); }}>Use P1</button>
-                    <button style={tinyBtn} onClick={() => { setPlayer1Address(DEV_PLAYER2_ADDRESS); if (isDevModeAvailable) switchPlayer(2).catch(() => { }); }}>Use P2</button>
-                  </div>
-                </div>
-                <div>
-                  <label style={lbl}>Invited Address (Player 2)</label>
-                  <input type="text" value={player2Address} onChange={e => setPlayer2Address(e.target.value.trim())} placeholder="G..." style={inp} />
-                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                    <button style={tinyBtn} onClick={() => setPlayer2Address(DEV_PLAYER1_ADDRESS)}>Use P1</button>
-                    <button style={tinyBtn} onClick={() => setPlayer2Address(DEV_PLAYER2_ADDRESS)}>Use P2</button>
-                  </div>
-                </div>
+              <div>
+                <label style={lbl}>Your Address (Player 1)</label>
+                <input type="text" value={player1Address} onChange={e => setPlayer1Address(e.target.value.trim())} placeholder="G..." style={inp} />
+                <p style={hint}>Pre-filled from connected wallet.</p>
               </div>
               <div>
                 <label style={lbl}>Your Points</label>
@@ -494,7 +548,6 @@ const lbl: React.CSSProperties = { display: 'block', fontWeight: 700, fontSize: 
 const inp: React.CSSProperties = { width: '100%', padding: '12px 16px', border: '2px solid #e5e7eb', borderRadius: 12, fontSize: '.85rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', background: 'white' };
 const hint: React.CSSProperties = { fontSize: '.72rem', color: '#6b7280', fontWeight: 600, marginTop: 4 };
 const infoBox: React.CSSProperties = { background: 'linear-gradient(135deg,#eff6ff,#dbeafe)', border: '2px solid #bfdbfe', borderRadius: 12, padding: '10px 14px' };
-const tinyBtn: React.CSSProperties = { padding: '4px 8px', fontSize: '.65rem', fontWeight: 750, background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6, cursor: 'pointer' };
 const bigBtn = (bg: string): React.CSSProperties => ({
   width: '100%', padding: 14, background: bg, color: 'white', border: 'none',
   borderRadius: 14, fontWeight: 800, fontSize: '.95rem', cursor: 'pointer',
