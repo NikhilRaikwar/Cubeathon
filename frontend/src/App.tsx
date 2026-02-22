@@ -5,7 +5,7 @@ import { useWallet } from './hooks/useWallet';
 import { cubeathonService } from './services/cubeathonService';
 import { devWalletService, DevWalletService } from './services/devWalletService';
 import { WalletSwitcher } from './components/WalletSwitcher';
-import { DEV_PLAYER2_ADDRESS } from './utils/constants';
+import { DEV_PLAYER1_ADDRESS, DEV_PLAYER2_ADDRESS } from './utils/constants';
 import './App.css';
 
 // ── Stable memoized header
@@ -68,6 +68,7 @@ export default function App() {
   // Create-mode form state
   const [createMode, setCreateMode] = useState<CreateMode>('create');
   const [player1Address, setPlayer1Address] = useState(publicKey || '');
+  const [player2Address, setPlayer2Address] = useState(DEV_PLAYER2_ADDRESS || '');
   const [player1Points, setPlayer1Points] = useState('0.1');
 
   // Auth entry export (Player 1 → Player 2)
@@ -103,6 +104,17 @@ export default function App() {
     if (publicKey) setPlayer1Address(publicKey);
   }, [publicKey]);
 
+  // Set default P2 if P1 changes and they happen to be same
+  useEffect(() => {
+    if (player1Address === player2Address) {
+      if (player1Address === DEV_PLAYER1_ADDRESS) {
+        setPlayer2Address(DEV_PLAYER2_ADDRESS);
+      } else {
+        setPlayer2Address(DEV_PLAYER1_ADDRESS);
+      }
+    }
+  }, [player1Address]);
+
   const parsePoints = (s: string): bigint | null => {
     try {
       const cleaned = s.replace(/[^\d.]/g, '');
@@ -121,32 +133,17 @@ export default function App() {
     const p1Points = parsePoints(player1Points);
     if (!p1Points || p1Points <= 0n) { setError('Enter a valid points amount.'); return; }
 
-    // Use a valid player 2 address for simulation
-    let simulationP2 = '';
-    if (DevWalletService.isPlayerAvailable(2)) {
-      try {
-        await devWalletService.initPlayer(2);
-        simulationP2 = devWalletService.getPublicKey();
-        await devWalletService.initPlayer(1);
-      } catch { /* ignore */ }
-    }
-
-    // Robust fallback for simulation player 2
-    if (!simulationP2 || simulationP2 === publicKey) {
-      simulationP2 = DEV_PLAYER2_ADDRESS || 'GDO5KFBDKWAGPP3MC72BGBGMBA3UKYKLRTUUYX3AJLCGRVE2LDSEBDK7';
-    }
-    // Final check to ensure they are DIFFERENT
-    if (simulationP2 === publicKey) {
-      simulationP2 = 'GBS43BF24ENNSXDRSOTAR_PLACEHOLDER_P2'; // Should not happen if constants are set
-      // Use the one from the error log as last resort
-      simulationP2 = 'GDO5KFBDKWAGPP3MC72BGBGMBA3UKYKLRTUUYX3AJLCGRVE2LDSEBDK7';
+    if (!player2Address || player2Address === player1Address) {
+      setError('Player 2 address must be valid and DIFFERENT from yours.');
+      return;
     }
 
     try {
       setLoading(true);
       const signer = getContractSigner();
+      // Use the actual user-inputted player2Address for simulation source too
       const xdr = await cubeathonService.prepareStartGame(
-        sessionId, player1Address, simulationP2, p1Points, p1Points, signer
+        sessionId, player1Address, player2Address, p1Points, p1Points, signer
       );
       setExportedXDR(xdr);
       setSuccess('Auth entry ready! Copy the XDR below and send it to Player 2.');
@@ -155,7 +152,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [isConnected, publicKey, player1Address, player1Points, sessionId, getContractSigner]);
+  }, [isConnected, publicKey, player1Address, player2Address, player1Points, sessionId, getContractSigner]);
 
   const handleQuickstart = useCallback(async () => {
     setError(null); setSuccess(null);
@@ -396,10 +393,23 @@ export default function App() {
           </div>
           {createMode === 'create' && !exportedXDR && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div>
-                <label style={lbl}>Your Address (Player 1)</label>
-                <input type="text" value={player1Address} onChange={e => setPlayer1Address(e.target.value.trim())} placeholder="G..." style={inp} />
-                <p style={hint}>Pre-filled from connected wallet.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={lbl}>Your Address (Player 1)</label>
+                  <input type="text" value={player1Address} onChange={e => setPlayer1Address(e.target.value.trim())} placeholder="G..." style={inp} />
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                    <button style={tinyBtn} onClick={() => setPlayer1Address(DEV_PLAYER1_ADDRESS)}>Use P1</button>
+                    <button style={tinyBtn} onClick={() => setPlayer1Address(DEV_PLAYER2_ADDRESS)}>Use P2</button>
+                  </div>
+                </div>
+                <div>
+                  <label style={lbl}>Invited Address (Player 2)</label>
+                  <input type="text" value={player2Address} onChange={e => setPlayer2Address(e.target.value.trim())} placeholder="G..." style={inp} />
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                    <button style={tinyBtn} onClick={() => setPlayer2Address(DEV_PLAYER1_ADDRESS)}>Use P1</button>
+                    <button style={tinyBtn} onClick={() => setPlayer2Address(DEV_PLAYER2_ADDRESS)}>Use P2</button>
+                  </div>
+                </div>
               </div>
               <div>
                 <label style={lbl}>Your Points</label>
@@ -482,6 +492,7 @@ const lbl: React.CSSProperties = { display: 'block', fontWeight: 700, fontSize: 
 const inp: React.CSSProperties = { width: '100%', padding: '12px 16px', border: '2px solid #e5e7eb', borderRadius: 12, fontSize: '.85rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', background: 'white' };
 const hint: React.CSSProperties = { fontSize: '.72rem', color: '#6b7280', fontWeight: 600, marginTop: 4 };
 const infoBox: React.CSSProperties = { background: 'linear-gradient(135deg,#eff6ff,#dbeafe)', border: '2px solid #bfdbfe', borderRadius: 12, padding: '10px 14px' };
+const tinyBtn: React.CSSProperties = { padding: '4px 8px', fontSize: '.65rem', fontWeight: 750, background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6, cursor: 'pointer' };
 const bigBtn = (bg: string): React.CSSProperties => ({
   width: '100%', padding: 14, background: bg, color: 'white', border: 'none',
   borderRadius: 14, fontWeight: 800, fontSize: '.95rem', cursor: 'pointer',
