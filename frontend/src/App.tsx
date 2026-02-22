@@ -57,7 +57,9 @@ export default function App() {
     publicKey, isConnected, isConnecting,
     currentPlayer,
     connectDev,
+    switchPlayer,
     getContractSigner, quickstartAvailable,
+    isDevModeAvailable,
     error: walletError,
   } = useWallet();
 
@@ -398,8 +400,8 @@ export default function App() {
                   <label style={lbl}>Your Address (Player 1)</label>
                   <input type="text" value={player1Address} onChange={e => setPlayer1Address(e.target.value.trim())} placeholder="G..." style={inp} />
                   <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                    <button style={tinyBtn} onClick={() => setPlayer1Address(DEV_PLAYER1_ADDRESS)}>Use P1</button>
-                    <button style={tinyBtn} onClick={() => setPlayer1Address(DEV_PLAYER2_ADDRESS)}>Use P2</button>
+                    <button style={tinyBtn} onClick={() => { setPlayer1Address(DEV_PLAYER1_ADDRESS); if (isDevModeAvailable) switchPlayer(1).catch(() => { }); }}>Use P1</button>
+                    <button style={tinyBtn} onClick={() => { setPlayer1Address(DEV_PLAYER2_ADDRESS); if (isDevModeAvailable) switchPlayer(2).catch(() => { }); }}>Use P2</button>
                   </div>
                 </div>
                 <div>
