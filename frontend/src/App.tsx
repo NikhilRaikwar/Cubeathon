@@ -5,10 +5,10 @@ import { useWallet } from './hooks/useWallet';
 import { cubeathonService } from './services/cubeathonService';
 import { devWalletService, DevWalletService } from './services/devWalletService';
 import { WalletSwitcher } from './components/WalletSwitcher';
+import { DEV_PLAYER2_ADDRESS } from './utils/constants';
 import './App.css';
 
-// ── Stable memoized header – defined OUTSIDE App so React never remounts it
-// on internal state changes, preventing the fadeUp animation from re-firing.
+// ── Stable memoized header
 interface AppHeaderProps {
   page: 'home' | 'games' | 'docs';
   onNavigate: (p: 'home' | 'games' | 'docs') => void;
@@ -88,7 +88,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Active game context (players, points, session)
+  // Active game context
   const [activeGame, setActiveGame] = useState<{
     sessionId: number;
     player1: string;
@@ -99,7 +99,6 @@ export default function App() {
 
   const shortAddr = (a: string) => a ? `${a.slice(0, 8)}...${a.slice(-4)}` : '—';
 
-  // ── Sync player1Address whenever the connected wallet changes ─────────────
   useEffect(() => {
     if (publicKey) setPlayer1Address(publicKey);
   }, [publicKey]);
@@ -113,7 +112,6 @@ export default function App() {
     } catch { return null; }
   };
 
-  // ── PREPARE AUTH ENTRY (Player 1) ────────────────────────────────────────
   const handlePrepare = useCallback(async () => {
     setError(null); setSuccess(null);
     if (!isConnected || !publicKey) {
@@ -123,22 +121,25 @@ export default function App() {
     const p1Points = parsePoints(player1Points);
     if (!p1Points || p1Points <= 0n) { setError('Enter a valid points amount.'); return; }
 
-    // Need a placeholder P2 for simulation – use P2 from devWalletService if available
+    // Use a valid player 2 address for simulation
     let simulationP2 = '';
     if (DevWalletService.isPlayerAvailable(2)) {
       try {
         await devWalletService.initPlayer(2);
         simulationP2 = devWalletService.getPublicKey();
-        // Switch back to P1
         await devWalletService.initPlayer(1);
       } catch { /* ignore */ }
     }
-    // fallback – MUST be different from Player 1 or contract panics
-    if (!simulationP2) {
-      simulationP2 = 'GBPQMCHH7S7WCP2F7T7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P'; // Generic dummy P2
-      if (simulationP2 === player1Address) {
-        simulationP2 = 'GCTVPZG3FHP2F7T7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P'; // Alternate dummy
-      }
+
+    // Robust fallback for simulation player 2
+    if (!simulationP2 || simulationP2 === publicKey) {
+      simulationP2 = DEV_PLAYER2_ADDRESS || 'GDO5KFBDKWAGPP3MC72BGBGMBA3UKYKLRTUUYX3AJLCGRVE2LDSEBDK7';
+    }
+    // Final check to ensure they are DIFFERENT
+    if (simulationP2 === publicKey) {
+      simulationP2 = 'GBS43BF24ENNSXDRSOTAR_PLACEHOLDER_P2'; // Should not happen if constants are set
+      // Use the one from the error log as last resort
+      simulationP2 = 'GDO5KFBDKWAGPP3MC72BGBGMBA3UKYKLRTUUYX3AJLCGRVE2LDSEBDK7';
     }
 
     try {
@@ -156,7 +157,6 @@ export default function App() {
     }
   }, [isConnected, publicKey, player1Address, player1Points, sessionId, getContractSigner]);
 
-  // ── QUICKSTART (both players, dev mode) ──────────────────────────────────
   const handleQuickstart = useCallback(async () => {
     setError(null); setSuccess(null);
     if (!quickstartAvailable) {
@@ -165,24 +165,17 @@ export default function App() {
     }
     try {
       setLoading(true);
-
       await devWalletService.initPlayer(1);
       const p1Addr = devWalletService.getPublicKey();
       const p1Signer = devWalletService.getSigner();
-
       await devWalletService.initPlayer(2);
       const p2Addr = devWalletService.getPublicKey();
       const p2Signer = devWalletService.getSigner();
-
       const points = parsePoints('0.1') ?? 1000000n;
-
       const p1XDR = await cubeathonService.prepareStartGame(
         sessionId, p1Addr, p2Addr, points, points, p1Signer
       );
-
       await cubeathonService.importAndStartGame(p1XDR, p2Addr, points, p2Signer);
-
-      // Switch back to P1
       await connectDev(1);
       setActiveGame({
         sessionId,
@@ -200,14 +193,12 @@ export default function App() {
     }
   }, [quickstartAvailable, sessionId, connectDev]);
 
-  // ── IMPORT & JOIN (Player 2) ─────────────────────────────────────────────
   const handleImport = useCallback(async () => {
     setError(null); setSuccess(null);
     if (!importXDR.trim()) { setError('Paste the auth entry XDR from Player 1.'); return; }
     if (!isConnected || !publicKey) { setError('Connect wallet first.'); return; }
     const p2Points = parsePoints(importP2Points);
     if (!p2Points || p2Points <= 0n) { setError('Enter valid Player 2 points.'); return; }
-
     try {
       setLoading(true);
       const parsed = cubeathonService.parseAuthEntry(importXDR.trim());
@@ -221,7 +212,6 @@ export default function App() {
       });
       const signer = getContractSigner();
       await cubeathonService.importAndStartGame(importXDR.trim(), publicKey, p2Points, signer);
-
       setActiveGame({
         sessionId: parsed.sessionId,
         player1: parsed.player1,
@@ -229,7 +219,6 @@ export default function App() {
         player1Points: parsed.player1Points,
         player2Points: p2Points,
       });
-
       setSuccess('Game created on-chain! Starting game…');
       setGameActive(true);
     } catch (err) {
@@ -239,7 +228,6 @@ export default function App() {
     }
   }, [importXDR, importP2Points, isConnected, publicKey, getContractSigner]);
 
-  // ── LOAD EXISTING ────────────────────────────────────────────────────────
   const handleLoad = useCallback(async () => {
     setError(null);
     const sid = parseInt(loadSessionId, 10);
@@ -248,7 +236,6 @@ export default function App() {
       setLoading(true);
       const game = await cubeathonService.getGame(sid);
       if (!game) { setError('Game not found on-chain.'); return; }
-
       setActiveGame({
         sessionId: sid,
         player1: game.player1,
@@ -256,7 +243,6 @@ export default function App() {
         player1Points: game.p1_points,
         player2Points: game.p2_points,
       });
-
       setSuccess('Game found! Loading…');
       setGameActive(true);
     } catch (err) {
@@ -266,13 +252,10 @@ export default function App() {
     }
   }, [loadSessionId]);
 
-  // helper to navigate and always clear gameActive
   const navigate = useCallback((p: 'home' | 'games' | 'docs') => {
     setPage(p); setGameActive(false);
   }, []);
 
-
-  // ── Render active game ────────────────────────────────────────────────────
   if (gameActive) {
     return (
       <div className="studio">
@@ -280,10 +263,7 @@ export default function App() {
           <div className="studio-orb orb-1" /><div className="studio-orb orb-2" />
           <div className="studio-orb orb-3" /><div className="studio-grid" />
         </div>
-        <AppHeader
-          page={page}
-          onNavigate={navigate}
-        />
+        <AppHeader page={page} onNavigate={navigate} />
         <main className="studio-main">
           <CubeathonGame
             key={`${publicKey}-${activeGame?.sessionId ?? sessionId}`}
@@ -309,7 +289,6 @@ export default function App() {
     );
   }
 
-  // ── Studio Home ───────────────────────────────────────────────────────────
   if (page === 'home') {
     return (
       <div className="studio">
@@ -317,10 +296,7 @@ export default function App() {
           <div className="studio-orb orb-1" /><div className="studio-orb orb-2" />
           <div className="studio-orb orb-3" /><div className="studio-grid" />
         </div>
-        <AppHeader
-          page={page}
-          onNavigate={navigate}
-        />
+        <AppHeader page={page} onNavigate={navigate} />
         <main className="studio-main">
           <div className="card" style={{ maxWidth: 640, margin: '0 auto' }}>
             <h2 style={{ fontFamily: 'var(--font-serif)', marginBottom: '1rem' }}>Welcome to the Studio</h2>
@@ -336,7 +312,6 @@ export default function App() {
     );
   }
 
-  // ── Documentation ─────────────────────────────────────────────────────────
   if (page === 'docs') {
     return (
       <div className="studio">
@@ -344,10 +319,7 @@ export default function App() {
           <div className="studio-orb orb-1" /><div className="studio-orb orb-2" />
           <div className="studio-orb orb-3" /><div className="studio-grid" />
         </div>
-        <AppHeader
-          page={page}
-          onNavigate={navigate}
-        />
+        <AppHeader page={page} onNavigate={navigate} />
         <main className="studio-main">
           <div className="card" style={{ maxWidth: 720, margin: '0 auto' }}>
             <h2 style={{ fontFamily: 'var(--font-serif)', marginBottom: '1rem' }}>Documentation</h2>
@@ -363,7 +335,6 @@ export default function App() {
     );
   }
 
-  // ── GAMES LIBRARY LANDING ─────────────────────────────────────────────────
   const tabGrad: Record<CreateMode, string> = {
     create: 'linear-gradient(135deg,#a855f7,#ec4899)',
     import: 'linear-gradient(135deg,#3b82f6,#06b6d4)',
@@ -376,13 +347,8 @@ export default function App() {
         <div className="studio-orb orb-1" /><div className="studio-orb orb-2" />
         <div className="studio-orb orb-3" /><div className="studio-grid" />
       </div>
-      <AppHeader
-        page={page}
-        onNavigate={navigate}
-      />
+      <AppHeader page={page} onNavigate={navigate} />
       <main className="studio-main">
-
-        {/* Title row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.6rem,3vw,2.4rem)', margin: 0, background: 'linear-gradient(135deg,#a855f7,#ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-flex', gap: 10 }}>
@@ -399,15 +365,9 @@ export default function App() {
             ← Back to Games
           </button>
         </div>
-
-        {/* Alerts */}
         {error && <div className="notice error" style={{ marginBottom: 16 }}>⚠️ {error}</div>}
         {success && <div className="notice success" style={{ marginBottom: 16 }}>✅ {success}</div>}
-
-        {/* Setup card */}
         <div className="card" style={{ padding: '2rem' }}>
-
-          {/* 3-tab switcher */}
           <div style={{ display: 'flex', gap: 8, background: '#f3f4f6', borderRadius: 14, padding: 6, marginBottom: '1.5rem' }}>
             {(['create', 'import', 'load'] as CreateMode[]).map((m) => (
               <button key={m} onClick={() => { setCreateMode(m); setError(null); setSuccess(null); setExportedXDR(null); }} style={{
@@ -423,8 +383,6 @@ export default function App() {
               </button>
             ))}
           </div>
-
-          {/* Quickstart dev box */}
           <div style={{ background: 'linear-gradient(135deg,#fefce8,#fef3c7)', border: '2px solid #fde68a', borderRadius: 14, padding: '14px 18px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
             <div>
               <p style={{ fontWeight: 800, fontSize: '.83rem', color: '#78350f', marginBottom: 2 }}>⚡ Quickstart (Dev)</p>
@@ -436,8 +394,6 @@ export default function App() {
               {loading ? 'Working…' : '⚡ Quickstart Game'}
             </button>
           </div>
-
-          {/* ── CREATE MODE ─────────────────────────── */}
           {createMode === 'create' && !exportedXDR && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
@@ -461,8 +417,6 @@ export default function App() {
               </button>
             </div>
           )}
-
-          {/* ── EXPORTED XDR ──────────────────────── */}
           {createMode === 'create' && exportedXDR && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <p style={{ fontWeight: 700, fontSize: '.88rem' }}>✅ Auth entry signed! Send this to Player 2:</p>
@@ -483,8 +437,6 @@ export default function App() {
               <button onClick={() => setGameActive(true)} style={{ ...bigBtn('linear-gradient(135deg,#10b981,#059669)') }}>▶ Enter Game (Player 1)</button>
             </div>
           )}
-
-          {/* ── IMPORT MODE ───────────────────────── */}
           {createMode === 'import' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
@@ -508,8 +460,6 @@ export default function App() {
               </button>
             </div>
           )}
-
-          {/* ── LOAD MODE ─────────────────────────── */}
           {createMode === 'load' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
@@ -528,7 +478,6 @@ export default function App() {
   );
 }
 
-// ── Shared style helpers ───────────────────────────────────────────────────
 const lbl: React.CSSProperties = { display: 'block', fontWeight: 700, fontSize: '.82rem', color: '#374151', marginBottom: 6 };
 const inp: React.CSSProperties = { width: '100%', padding: '12px 16px', border: '2px solid #e5e7eb', borderRadius: 12, fontSize: '.85rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', background: 'white' };
 const hint: React.CSSProperties = { fontSize: '.72rem', color: '#6b7280', fontWeight: 600, marginTop: 4 };
