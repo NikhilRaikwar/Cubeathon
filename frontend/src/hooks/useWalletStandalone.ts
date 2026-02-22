@@ -39,6 +39,7 @@ export function useWalletStandalone() {
     network,
     networkPassphrase,
     error,
+    currentPlayer,
     setWallet,
     setConnecting,
     setNetwork,
@@ -113,7 +114,7 @@ export function useWalletStandalone() {
   const isDevModeAvailable = useCallback(() => false, []);
   const isDevPlayerAvailable = useCallback(() => false, []);
   const getCurrentDevPlayer = useCallback(() => null, []);
-  const currentPlayer = null;
+  const quickstartAvailable = false;
 
   const getContractSigner = useCallback((): ContractSigner => {
     if (!isConnected || !publicKey) {
@@ -182,15 +183,16 @@ export function useWalletStandalone() {
     networkPassphrase,
     error,
     isWalletAvailable,
-    currentPlayer,
+    currentPlayer: currentPlayer as 1 | 2 | null,
     connect,
     refresh,
     disconnect,
     getContractSigner,
     connectDev,
     switchPlayer,
-    isDevModeAvailable,
-    isDevPlayerAvailable,
-    getCurrentDevPlayer,
+    isDevModeAvailable: isDevModeAvailable(),
+    isDevPlayerAvailable: isDevPlayerAvailable(),
+    getCurrentDevPlayer: getCurrentDevPlayer(),
+    quickstartAvailable,
   };
 }

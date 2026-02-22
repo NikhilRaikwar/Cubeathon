@@ -7,6 +7,7 @@ export interface WalletState {
   walletType: 'dev' | 'wallet' | null; // Track if dev wallet or real wallet
   isConnected: boolean;
   isConnecting: boolean;
+  currentPlayer: 1 | 2 | null;
 
   // Network info
   network: string | null;
@@ -16,7 +17,7 @@ export interface WalletState {
   error: string | null;
 
   // Actions
-  setWallet: (publicKey: string, walletId: string, walletType: 'dev' | 'wallet') => void;
+  setWallet: (publicKey: string, walletId: string, walletType: 'dev' | 'wallet', player?: 1 | 2) => void;
   setPublicKey: (publicKey: string) => void;
   setConnected: (connected: boolean) => void;
   setConnecting: (connecting: boolean) => void;
@@ -32,6 +33,7 @@ const initialState = {
   walletType: null,
   isConnected: false,
   isConnecting: false,
+  currentPlayer: null,
   network: null,
   networkPassphrase: null,
   error: null,
@@ -40,13 +42,14 @@ const initialState = {
 export const useWalletStore = create<WalletState>()((set) => ({
   ...initialState,
 
-  setWallet: (publicKey, walletId, walletType) =>
+  setWallet: (publicKey, walletId, walletType, player) =>
     set({
       publicKey,
       walletId,
       walletType,
       isConnected: true,
       isConnecting: false,
+      currentPlayer: player ?? null,
       error: null,
     }),
 

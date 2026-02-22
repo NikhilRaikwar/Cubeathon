@@ -9,24 +9,25 @@ export function WalletSwitcher() {
     isConnecting,
     walletType,
     error,
+    connect,
     connectDev,
     switchPlayer,
     currentPlayer,
+    isDevModeAvailable,
   } = useWallet();
 
   const hasAttemptedConnection = useRef(false);
 
-  // Auto-connect to Player 1 on mount (only try once)
+  // Auto-connect to Player 1 on mount — only if dev mode is available
   useEffect(() => {
-    if (!isConnected && !isConnecting && !hasAttemptedConnection.current) {
+    if (!isConnected && !isConnecting && !hasAttemptedConnection.current && isDevModeAvailable) {
       hasAttemptedConnection.current = true;
       connectDev(1).catch(console.error);
     }
-  }, [isConnected, isConnecting, connectDev]);
+  }, [isConnected, isConnecting, connectDev, isDevModeAvailable]);
 
   const handleSwitch = async () => {
     if (walletType !== 'dev') return;
-
     const nextPlayer = currentPlayer === 1 ? 2 : 1;
     try {
       await switchPlayer(nextPlayer);
@@ -35,6 +36,41 @@ export function WalletSwitcher() {
     }
   };
 
+  // --- Standalone / Vercel mode: show Connect Wallet button ---
+  if (!isDevModeAvailable && !isConnected) {
+    return (
+      <div className="wallet-switcher">
+        {error && (
+          <div className="wallet-error">
+            <div className="error-title">Connection Failed</div>
+            <div className="error-message">{error}</div>
+          </div>
+        )}
+        <button
+          className="connect-wallet-button"
+          onClick={() => connect()}
+          disabled={isConnecting}
+          style={{
+            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '10px',
+            padding: '8px 16px',
+            fontWeight: 700,
+            fontSize: '0.8rem',
+            cursor: isConnecting ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          {isConnecting ? '⟳ Connecting...' : '🔗 Connect Wallet'}
+        </button>
+      </div>
+    );
+  }
+
+  // --- Dev mode: not connected yet (auto-connecting) ---
   if (!isConnected) {
     return (
       <div className="wallet-switcher">
@@ -53,6 +89,7 @@ export function WalletSwitcher() {
     );
   }
 
+  // --- Connected ---
   return (
     <div className="wallet-switcher">
       {error && (
@@ -66,7 +103,7 @@ export function WalletSwitcher() {
           <span className="status-indicator"></span>
           <div className="wallet-details">
             <div className="wallet-label">
-              Connected Player {currentPlayer}
+              {walletType === 'dev' ? `Player ${currentPlayer}` : 'Connected'}
             </div>
             <div className="wallet-address">
               {publicKey ? `${publicKey.slice(0, 8)}...${publicKey.slice(-4)}` : ''}

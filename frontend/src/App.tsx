@@ -317,7 +317,7 @@ export default function App() {
           publicKey={publicKey}
           isConnected={isConnected}
           isConnecting={isConnecting}
-          currentPlayer={currentPlayer}
+          currentPlayer={currentPlayer ?? 1}
           walletError={walletError ?? null}
           onNavigate={navigate}
           onSwitchPlayer={handleSwitchPlayer}
@@ -360,7 +360,7 @@ export default function App() {
           publicKey={publicKey}
           isConnected={isConnected}
           isConnecting={isConnecting}
-          currentPlayer={currentPlayer}
+          currentPlayer={currentPlayer ?? 1}
           walletError={walletError ?? null}
           onNavigate={navigate}
           onSwitchPlayer={handleSwitchPlayer}
@@ -393,7 +393,7 @@ export default function App() {
           publicKey={publicKey}
           isConnected={isConnected}
           isConnecting={isConnecting}
-          currentPlayer={currentPlayer}
+          currentPlayer={currentPlayer ?? 1}
           walletError={walletError ?? null}
           onNavigate={navigate}
           onSwitchPlayer={handleSwitchPlayer}
@@ -431,7 +431,7 @@ export default function App() {
         publicKey={publicKey}
         isConnected={isConnected}
         isConnecting={isConnecting}
-        currentPlayer={currentPlayer}
+        currentPlayer={currentPlayer ?? 1}
         walletError={walletError ?? null}
         onNavigate={navigate}
         onSwitchPlayer={handleSwitchPlayer}

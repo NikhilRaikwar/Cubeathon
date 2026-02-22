@@ -1,80 +1,22 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { useWalletStore } from '../store/walletStore';
-import { devWalletService, DevWalletService } from '../services/devWalletService';
-import { NETWORK_PASSPHRASE } from '../utils/constants';
-import type { ContractSigner } from '../types/signer';
+import { useDevWallet } from './useDevWallet';
+import { useWalletStandalone } from './useWalletStandalone';
+import { DevWalletService } from '../services/devWalletService';
 
+/**
+ * A composite hook that automatically delegates to useDevWallet in local development
+ * (when VITE_DEV_* secrets are present) and useWalletStandalone otherwise (like on Vercel).
+ */
 export function useWallet() {
-  const {
-    publicKey, walletType, isConnected, isConnecting, error,
-    currentPlayer,
-    setWallet, setConnecting, setError, disconnect: storeDisconnect,
-  } = useWalletStore();
+    const isDevModeAvailable = DevWalletService.isDevModeAvailable();
 
-  const connectDev = useCallback(async (playerNumber: 1 | 2) => {
-    try {
-      setConnecting(true);
-      setError(null);
-      await devWalletService.initPlayer(playerNumber);
-      const address = devWalletService.getPublicKey();
-      setWallet(address, 'dev', playerNumber);
-      return address;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to connect';
-      setError(msg);
-      throw err;
-    } finally {
-      setConnecting(false);
+    // Rules of hooks: both hooks must be called unconditionally on every render
+    const devWallet = useDevWallet();
+    const standaloneWallet = useWalletStandalone();
+
+    if (isDevModeAvailable) {
+        return devWallet;
     }
-  }, [setConnecting, setError, setWallet]);
 
-  // Auto-connect Player 1 once on mount
-  const autoConnectDone = useRef(false);
-  useEffect(() => {
-    if (autoConnectDone.current) return;
-    if (isConnected) { autoConnectDone.current = true; return; }
-    if (!DevWalletService.isDevModeAvailable()) return;
-    autoConnectDone.current = true;
-    connectDev(1).catch(console.error);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const switchPlayer = useCallback(async (playerNumber: 1 | 2) => {
-    try {
-      setConnecting(true);
-      setError(null);
-      await devWalletService.switchPlayer(playerNumber);
-      const address = devWalletService.getPublicKey();
-      setWallet(address, 'dev', playerNumber);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Switch failed';
-      setError(msg);
-      throw err;
-    } finally {
-      setConnecting(false);
-    }
-  }, [setConnecting, setError, setWallet]);
-
-  const disconnect = useCallback(async () => {
-    if (walletType === 'dev') devWalletService.disconnect();
-    storeDisconnect();
-  }, [walletType, storeDisconnect]);
-
-  const getContractSigner = useCallback((): ContractSigner => {
-    if (!isConnected || !publicKey) throw new Error('Wallet not connected');
-    if (walletType === 'dev') return devWalletService.getSigner();
-    throw new Error('Only dev wallet signing is supported');
-  }, [isConnected, publicKey, walletType]);
-
-  return {
-    publicKey, walletType, isConnected, isConnecting, error,
-    currentPlayer,
-    networkPassphrase: NETWORK_PASSPHRASE,
-    connectDev, switchPlayer, disconnect, getContractSigner,
-    isDevModeAvailable: DevWalletService.isDevModeAvailable(),
-    quickstartAvailable:
-      walletType === 'dev' &&
-      DevWalletService.isPlayerAvailable(1) &&
-      DevWalletService.isPlayerAvailable(2),
-  };
+    // Not in dev mode, provide the standard wallet experience
+    return standaloneWallet;
 }
