@@ -22,13 +22,14 @@ const WALL_H = 36;
 const GAP_W = 140;
 const WALL_GAP_PADDING = 14;
 
-const INITIAL_SPEED = 8.5;
-const SPEED_SCALE_RATE = 0.55;
-const SPAWN_DISTANCE = 600; // More room to maneuver at high speed
+const INITIAL_SPEED = 8.0;
+const SPEED_SCALE_RATE = 0.52;
+const SPAWN_DISTANCE = 600;
 const INITIAL_WALLS = 20;
 const TRACK_LENGTH = 15000;
-const FRICTION = 0.96;
-const STEER_FORCE = 3.5; // Highly responsive
+const FRICTION = 0.85; // Much tighter control
+const STEER_ACCEL = 1.45; // Smooth but firm
+const MAX_STEER_VEL = 22; // Prevent flying off road
 
 const HORIZON_Y = 120;
 const FOV = 350;
@@ -85,6 +86,7 @@ export function CubeathonGame({
         countdownN: 3,
         countdownTs: 0,
         rngSeed: sessionId,
+        lastTime: 0,
     });
 
     const [phase, setPhase] = useState<typeof g.current.phase>('idle');
@@ -268,19 +270,28 @@ export function CubeathonGame({
             return;
         }
 
+        // ── Framerate independence logic
+        const dt = s.lastTime > 0 ? (now - s.lastTime) / 16.67 : 1;
+        s.lastTime = now;
+
         // ── PLAYING
         s.levelTime = now - s.levelStartTs;
         setLevelTime(s.levelTime);
 
         const elapsedS = s.levelTime / 1000;
         const currentBaseSpd = INITIAL_SPEED + (Math.floor(elapsedS / 10) * SPEED_SCALE_RATE);
-        const spd = currentBaseSpd;
+        const spd = currentBaseSpd * dt;
 
         // Inertia-based steering
-        if (s.moveLeft) s.cubeVelX -= STEER_FORCE;
-        if (s.moveRight) s.cubeVelX += STEER_FORCE;
-        s.cubeVelX *= FRICTION;
-        s.cubeX += s.cubeVelX;
+        if (s.moveLeft) s.cubeVelX -= STEER_ACCEL * dt;
+        if (s.moveRight) s.cubeVelX += STEER_ACCEL * dt;
+
+        // Clamp velocity
+        if (s.cubeVelX > MAX_STEER_VEL) s.cubeVelX = MAX_STEER_VEL;
+        if (s.cubeVelX < -MAX_STEER_VEL) s.cubeVelX = -MAX_STEER_VEL;
+
+        s.cubeVelX *= Math.pow(FRICTION, dt);
+        s.cubeX += s.cubeVelX * dt;
 
         // Boundaries (Lethal)
         if (s.cubeX < 0 || s.cubeX > ROAD_W - CUBE_W) {
@@ -359,6 +370,7 @@ export function CubeathonGame({
         s.countdownTs = performance.now();
         s.cameraY = 0;
         s.lastSpawnY = 0;
+        s.lastTime = 0;
         s.walls = [];
         s.cubeX = (ROAD_W - CUBE_W) / 2;
         s.levelTime = 0;
