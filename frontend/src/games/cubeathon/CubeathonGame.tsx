@@ -45,12 +45,15 @@ interface LevelRecord {
     timeMs: number;
 }
 
+export type Difficulty = 'easy' | 'normal' | 'hard';
+
 export interface CubeathonGameProps {
     userAddress: string;
     sessionId: number;
     player1: string;
     player2: string;
     availablePoints: bigint;
+    difficulty: Difficulty;
     onBack: () => void;
     onStandingsRefresh: () => void;
     onGameComplete: (winnerAddr: string) => void;
@@ -60,7 +63,7 @@ export interface CubeathonGameProps {
 // ─────────────────────────────────────────────────────────
 export function CubeathonGame({
     userAddress, sessionId, player1, player2, availablePoints,
-    onBack, onStandingsRefresh, onGameComplete
+    difficulty, onBack, onStandingsRefresh, onGameComplete
 }: CubeathonGameProps) {
     const { getContractSigner } = useWallet();
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -233,6 +236,11 @@ export function CubeathonGame({
             ctx.fillRect(ROAD_LEFT, 0, ROAD_W, CANVAS_H);
             ctx.fillStyle = '#22d3ee'; ctx.font = 'bold 80px monospace'; ctx.textAlign = 'center';
             ctx.fillText(s.countdownN > 0 ? String(s.countdownN) : 'GO!', CANVAS_W / 2, CANVAS_H / 2 + 30);
+
+            ctx.font = 'bold 24px monospace';
+            ctx.fillStyle = difficulty === 'hard' ? '#f87171' : difficulty === 'easy' ? '#10b981' : '#22d3ee';
+            ctx.fillText(difficulty.toUpperCase() + " MODE", CANVAS_W / 2, CANVAS_H / 2 + 100);
+
             ctx.textAlign = 'left';
         }
     }, []);
@@ -279,7 +287,20 @@ export function CubeathonGame({
         setLevelTime(s.levelTime);
 
         const elapsedS = s.levelTime / 1000;
-        const currentBaseSpd = INITIAL_SPEED + (Math.floor(elapsedS / 10) * SPEED_SCALE_RATE);
+
+        // Difficulty-based speed scaling
+        let baseStartSpd = INITIAL_SPEED;
+        let scaleRate = SPEED_SCALE_RATE;
+
+        if (difficulty === 'easy') {
+            baseStartSpd = 6.0;
+            scaleRate = 0.35;
+        } else if (difficulty === 'hard') {
+            baseStartSpd = 12.0;
+            scaleRate = 0.85;
+        }
+
+        const currentBaseSpd = baseStartSpd + (Math.floor(elapsedS / 10) * scaleRate);
         const spd = currentBaseSpd * dt;
 
         // Inertia-based steering
