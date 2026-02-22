@@ -4,26 +4,20 @@ import studioLogo from './assets/logo.svg';
 import { useWallet } from './hooks/useWallet';
 import { cubeathonService } from './services/cubeathonService';
 import { devWalletService, DevWalletService } from './services/devWalletService';
+import { WalletSwitcher } from './components/WalletSwitcher';
 import './App.css';
 
 // ── Stable memoized header – defined OUTSIDE App so React never remounts it
 // on internal state changes, preventing the fadeUp animation from re-firing.
 interface AppHeaderProps {
   page: 'home' | 'games' | 'docs';
-  publicKey: string | null;
-  isConnected: boolean;
-  isConnecting: boolean;
-  currentPlayer: 1 | 2;
-  walletError: string | null;
   onNavigate: (p: 'home' | 'games' | 'docs') => void;
-  onSwitchPlayer: () => void;
 }
 
 const AppHeader = memo(function AppHeader({
-  page, publicKey, isConnected, isConnecting, currentPlayer, walletError,
-  onNavigate, onSwitchPlayer,
+  page,
+  onNavigate,
 }: AppHeaderProps) {
-  const shortAddr = (a: string) => a ? `${a.slice(0, 8)}...${a.slice(-4)}` : '—';
   return (
     <header className="studio-header">
       <div className="brand">
@@ -48,29 +42,7 @@ const AppHeader = memo(function AppHeader({
       </div>
       <div className="header-actions">
         <div className="network-pill">Testnet</div>
-        <div className="wallet-switcher">
-          <div className="wallet-info">
-            {!isConnected ? (
-              <div className="wallet-status connecting">
-                <span className="status-indicator" />
-                <span style={{ fontSize: '.8rem', color: 'var(--color-ink-muted)' }}>
-                  {isConnecting ? 'Connecting…' : walletError || 'Not connected'}
-                </span>
-              </div>
-            ) : (
-              <div className="wallet-status connected">
-                <span className="status-indicator" />
-                <div className="wallet-details">
-                  <div className="wallet-label">Connected Player {currentPlayer}</div>
-                  <div className="wallet-address">{shortAddr(publicKey ?? '')}</div>
-                </div>
-                <button className="switch-button" onClick={onSwitchPlayer}>
-                  Switch to Player {currentPlayer === 1 ? 2 : 1}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <WalletSwitcher />
       </div>
     </header>
   );
@@ -84,7 +56,7 @@ export default function App() {
   const {
     publicKey, isConnected, isConnecting,
     currentPlayer,
-    connectDev, switchPlayer,
+    connectDev,
     getContractSigner, quickstartAvailable,
     error: walletError,
   } = useWallet();
@@ -141,21 +113,11 @@ export default function App() {
     } catch { return null; }
   };
 
-  // ── Handle Switch Player ─────────────────────────────────────────────────
-  const handleSwitchPlayer = useCallback(async () => {
-    const nextPlayer = currentPlayer === 1 ? 2 : 1;
-    try {
-      await switchPlayer(nextPlayer);
-    } catch (err) {
-      console.error('Switch failed:', err);
-    }
-  }, [currentPlayer, switchPlayer]);
-
   // ── PREPARE AUTH ENTRY (Player 1) ────────────────────────────────────────
   const handlePrepare = useCallback(async () => {
     setError(null); setSuccess(null);
     if (!isConnected || !publicKey) {
-      setError('Wallet not connected. Please wait for auto-connect.');
+      setError('Wallet not connected. Please connect your wallet first.');
       return;
     }
     const p1Points = parsePoints(player1Points);
@@ -171,7 +133,7 @@ export default function App() {
         await devWalletService.initPlayer(1);
       } catch { /* ignore */ }
     }
-    if (!simulationP2) simulationP2 = player1Address; // fallback – same addr, will fail contract but not simulation
+    if (!simulationP2) simulationP2 = player1Address; // fallback – same addr
 
     try {
       setLoading(true);
@@ -182,7 +144,7 @@ export default function App() {
       setExportedXDR(xdr);
       setSuccess('Auth entry ready! Copy the XDR below and send it to Player 2.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Prepare failed. Is VITE_CUBEATHON_CONTRACT_ID set?');
+      setError(err instanceof Error ? err.message : 'Prepare failed.');
     } finally {
       setLoading(false);
     }
@@ -192,7 +154,7 @@ export default function App() {
   const handleQuickstart = useCallback(async () => {
     setError(null); setSuccess(null);
     if (!quickstartAvailable) {
-      setError('Quickstart requires VITE_DEV_PLAYER1_SECRET + VITE_DEV_PLAYER2_SECRET in .env');
+      setError('Quickstart requires dev wallets (VITE_DEV_* secrets).');
       return;
     }
     try {
@@ -314,13 +276,7 @@ export default function App() {
         </div>
         <AppHeader
           page={page}
-          publicKey={publicKey}
-          isConnected={isConnected}
-          isConnecting={isConnecting}
-          currentPlayer={currentPlayer ?? 1}
-          walletError={walletError ?? null}
           onNavigate={navigate}
-          onSwitchPlayer={handleSwitchPlayer}
         />
         <main className="studio-main">
           <CubeathonGame
@@ -357,13 +313,7 @@ export default function App() {
         </div>
         <AppHeader
           page={page}
-          publicKey={publicKey}
-          isConnected={isConnected}
-          isConnecting={isConnecting}
-          currentPlayer={currentPlayer ?? 1}
-          walletError={walletError ?? null}
           onNavigate={navigate}
-          onSwitchPlayer={handleSwitchPlayer}
         />
         <main className="studio-main">
           <div className="card" style={{ maxWidth: 640, margin: '0 auto' }}>
@@ -390,13 +340,7 @@ export default function App() {
         </div>
         <AppHeader
           page={page}
-          publicKey={publicKey}
-          isConnected={isConnected}
-          isConnecting={isConnecting}
-          currentPlayer={currentPlayer ?? 1}
-          walletError={walletError ?? null}
           onNavigate={navigate}
-          onSwitchPlayer={handleSwitchPlayer}
         />
         <main className="studio-main">
           <div className="card" style={{ maxWidth: 720, margin: '0 auto' }}>
@@ -428,13 +372,7 @@ export default function App() {
       </div>
       <AppHeader
         page={page}
-        publicKey={publicKey}
-        isConnected={isConnected}
-        isConnecting={isConnecting}
-        currentPlayer={currentPlayer ?? 1}
-        walletError={walletError ?? null}
         onNavigate={navigate}
-        onSwitchPlayer={handleSwitchPlayer}
       />
       <main className="studio-main">
 
