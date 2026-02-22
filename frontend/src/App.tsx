@@ -133,7 +133,13 @@ export default function App() {
         await devWalletService.initPlayer(1);
       } catch { /* ignore */ }
     }
-    if (!simulationP2) simulationP2 = player1Address; // fallback – same addr
+    // fallback – MUST be different from Player 1 or contract panics
+    if (!simulationP2) {
+      simulationP2 = 'GBPQMCHH7S7WCP2F7T7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P'; // Generic dummy P2
+      if (simulationP2 === player1Address) {
+        simulationP2 = 'GCTVPZG3FHP2F7T7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P7P'; // Alternate dummy
+      }
+    }
 
     try {
       setLoading(true);
