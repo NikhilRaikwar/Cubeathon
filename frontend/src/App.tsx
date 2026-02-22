@@ -65,7 +65,7 @@ const AppHeader = memo(function AppHeader({
               <div className="wallet-status connected">
                 <span className="status-indicator" />
                 <div className="wallet-details">
-                  <div className="wallet-label">{isDevModeAvailable ? `Connected Player ${currentPlayer}` : 'Connected'}</div>
+                  <div className="wallet-label">{isDevModeAvailable && currentPlayer ? `Connected Player ${currentPlayer}` : 'Connected'}</div>
                   <div className="wallet-address">{shortAddr(publicKey ?? '')}</div>
                 </div>
                 {isDevModeAvailable && (

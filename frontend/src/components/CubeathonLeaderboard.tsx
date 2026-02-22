@@ -26,14 +26,26 @@ export function CubeathonLeaderboard({
     sessionId, player1, player2, onClose
 }: LeaderboardProps) {
     const [hallOfFame, setHallOfFame] = useState<LeaderboardEntry[]>([]);
+    const [sessionStats, setSessionStats] = useState<{ player1: string, player2: string, p1Time: bigint, p2Time: bigint } | null>(null);
     const [loading, setLoading] = useState(true);
     const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
     const refresh = useCallback(async () => {
         setLoading(true);
         try {
-            const lb = await cubeathonService.getLeaderboard();
+            const [lb, game] = await Promise.all([
+                cubeathonService.getLeaderboard(),
+                cubeathonService.getGame(sessionId)
+            ]);
             setHallOfFame(lb);
+            if (game) {
+                setSessionStats({
+                    player1: game.player1,
+                    player2: game.player2,
+                    p1Time: game.p1_progress.max_time_ms,
+                    p2Time: game.p2_progress.max_time_ms,
+                });
+            }
             setLastRefresh(new Date());
         } catch (e) {
             console.warn("[Leaderboard]", e);
@@ -84,6 +96,31 @@ export function CubeathonLeaderboard({
                             style={{ background: "#f1f5f9", border: "none", borderRadius: 12, padding: "8px 14px", fontWeight: 800, fontSize: ".9rem", cursor: "pointer", color: "#475569" }}
                         >✕</button>
                     </div>
+                </div>
+
+                {/* Session Stats (Current Match) */}
+                <div style={{ marginBottom: '2.5rem' }}>
+                    <p style={{ fontSize: '.75rem', fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: '0.75rem' }}>
+                        Live Session Stats
+                    </p>
+                    {loading ? <LoadingRow /> : !sessionStats ? (
+                        <div style={{ padding: '12px 20px', background: '#f8fafc', borderRadius: 16, border: '1px solid #f1f5f9', color: '#94a3b8', fontSize: '.75rem', fontWeight: 700, textAlign: 'center' }}>
+                            Waiting for session to be registered...
+                        </div>
+                    ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div style={{ padding: '16px', background: '#f8fafc', borderRadius: 20, border: '1px solid #f1f5f9' }}>
+                                <p style={{ fontSize: '.55rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>Player 1</p>
+                                <p style={{ fontWeight: 800, fontSize: '.75rem', color: '#334155', marginBottom: 8 }}>{shortAddr(sessionStats.player1)}</p>
+                                <p style={{ fontWeight: 900, fontSize: '1.25rem', color: '#0f172a' }}>{MS(sessionStats.p1Time)}</p>
+                            </div>
+                            <div style={{ padding: '16px', background: '#f8fafc', borderRadius: 20, border: '1px solid #f1f5f9' }}>
+                                <p style={{ fontSize: '.55rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>Player 2</p>
+                                <p style={{ fontWeight: 800, fontSize: '.75rem', color: '#334155', marginBottom: 8 }}>{sessionStats.player2 ? shortAddr(sessionStats.player2) : 'Waiting...'}</p>
+                                <p style={{ fontWeight: 900, fontSize: '1.25rem', color: '#0f172a' }}>{sessionStats.player2 ? MS(sessionStats.p2Time) : '—'}</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Global Hall of Fame (All Time) */}
