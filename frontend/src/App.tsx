@@ -4,6 +4,7 @@ import studioLogo from './assets/logo.svg';
 import { useWallet } from './hooks/useWallet';
 import { cubeathonService } from './services/cubeathonService';
 import { devWalletService, DevWalletService } from './services/devWalletService';
+import { rpc as StellarRpc } from '@stellar/stellar-sdk';
 import './App.css';
 
 // ── Stable memoized header
@@ -203,26 +204,25 @@ export default function App() {
       console.info(`[Cubeathon] Creating on-chain session...`);
 
       const ensureFunded = async (addr: string) => {
-        const rpc = import.meta.env.VITE_SOROBAN_RPC_URL;
-        const horizon = rpc.includes('lightsail')
-          ? 'https://horizon-testnet.stellar.org'
-          : rpc.replace('rpc', 'horizon');
+        const rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL;
+        const server = new StellarRpc.Server(rpcUrl);
 
         for (let i = 0; i < 6; i++) {
           try {
-            const resp = await fetch(`${horizon}/accounts/${addr}`);
-            if (resp.status === 200) return; // Verified on-chain
-
-            if (resp.status === 404) {
-              console.log(`[DevWallet] ${addr.slice(0, 8)} missing. Funding via Friendbot... (Attempt ${i + 1})`);
-              await fetch(`https://friendbot.stellar.org/?addr=${addr}`);
+            await server.getAccount(addr);
+            return; // Account is now visible to the RPC node
+          } catch (err: any) {
+            const isNotFound = err.message?.includes('404') || err.status === 404 || err.message?.includes('not found');
+            if (isNotFound) {
+              console.info(`[DevWallet] ${addr.slice(0, 8)} missing on RPC. Funding/Polling... (Attempt ${i + 1})`);
+              await fetch(`https://friendbot.stellar.org/?addr=${addr}`).catch(() => { });
+            } else {
+              console.warn(`[DevWallet] RPC check warning for ${addr.slice(0, 8)}:`, err.message);
             }
-          } catch (e) {
-            console.warn(`[DevWallet] Horizon check failed for ${addr.slice(0, 8)}`, e);
           }
           await new Promise(r => setTimeout(r, 5000));
         }
-        throw new Error(`Account ${addr.slice(0, 8)}... not found after 30s. Verify Testnet status.`);
+        throw new Error(`Account ${addr.slice(0, 8)}... not ready on RPC after 30s.`);
       };
       await ensureFunded(p1Addr);
       await ensureFunded(p2Addr);
