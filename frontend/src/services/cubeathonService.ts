@@ -356,13 +356,31 @@ export class CubeathonService {
             throw new Error(`Tx error: ${(resp as any).errorResult?.toXDR?.() ?? "unknown"}`);
         }
         let finalResp: any = resp;
-        while (finalResp.status === "PENDING") {
+        let retries = 0;
+        while (finalResp.status === "PENDING" || (finalResp.status === "NOT_FOUND" && retries < 5)) {
             await new Promise((r) => setTimeout(r, 2000));
-            finalResp = await s.getTransaction(finalResp.hash);
+            try {
+                finalResp = await s.getTransaction(resp.hash);
+            } catch (err: any) {
+                if (err.message?.includes("NOT_FOUND")) {
+                    finalResp = { status: "NOT_FOUND", hash: resp.hash };
+                } else {
+                    throw err;
+                }
+            }
+            if (finalResp.status === "NOT_FOUND") retries++;
         }
 
         if (finalResp.status !== "SUCCESS") {
-            throw new Error(`Session initialization failed with status: ${finalResp.status}`);
+            console.error(`[Cubeathon] Transaction FAILED. Status: ${finalResp.status}`, finalResp);
+            const detail = finalResp.resultMetaXdr || finalResp.resultXdr || finalResp.errorResultXdr;
+            if (detail) console.error(`[Cubeathon] Failure XDR: ${detail}`);
+
+            // Try to find diagnostic events in the meta if available
+            if (finalResp.resultMetaXdr) {
+                console.warn("[Cubeathon] Suggestion: Decode Failure XDR at https://lab.stellar.org/#xdr-viewer?type=TransactionMeta&network=testnet");
+            }
+            throw new Error(`Session initialization failed with status: ${finalResp.status}. Check console for XDR detail.`);
         }
     }
 

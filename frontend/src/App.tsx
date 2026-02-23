@@ -83,7 +83,11 @@ const AppHeader = memo(function AppHeader({
   );
 });
 
-const createSessionId = () => (Math.floor(Math.random() * 0xffffffff) >>> 0) || 1;
+const createSessionId = () => {
+  const ts = Math.floor(Date.now() / 1000) % 1000000;
+  const rand = Math.floor(Math.random() * 1000);
+  return (ts * 1000 + rand) >>> 0;
+};
 type AppPage = 'home' | 'games' | 'docs';
 type CreateMode = 'create' | 'import' | 'load';
 
