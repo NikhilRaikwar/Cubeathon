@@ -153,8 +153,8 @@ impl CubeathonContract {
         if player1 == player2 {
             panic!("Players must be different");
         }
-        // player1.require_auth(); // Simplified for high-reliability match creation
-        player2.require_auth();
+        // player1.require_auth(); 
+        player2.require_auth(); // Match initialization signed by Player 2 (the joiner/submitter)
 
         // Call the shared Game Hub (real testnet: CB4VZAT2U3UC6XFK3N23SKRF2NDCMP3QHJYMCHHFMZO7MRQO6DQ2EMYG)
         let hub_addr: Address = env.storage().instance()
