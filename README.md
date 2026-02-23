@@ -9,7 +9,7 @@
 ---
 
 ## 📽️ Video Demonstration
-> **[Watch the Cubeathon Demo on YouTube](https://youtube.com/link-to-your-video)**  
+> **[Watch the Cubeathon Demo on YouTube](https://youtu.be/JTn_TVz_s1w)**  
 > *This video covers gameplay, the ZK generation process, and the on-chain finalization flow.*
 
 ---
