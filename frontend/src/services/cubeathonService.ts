@@ -312,7 +312,10 @@ export class CubeathonService {
 
         // 3. Populate auth entries with signatures
         for (let i = 0; i < auth.length; i++) {
-            const addr = Address.fromScAddress(auth[i].credentials().address().address()).toString();
+            const creds = auth[i].credentials();
+            if (creds.switch().name !== "sorobanCredentialsAddress") continue;
+
+            const addr = Address.fromScAddress(creds.address().address()).toString();
             if (addr === p1AddrKey) {
                 auth[i] = p1Signed;
             } else if (addr === player2) {
