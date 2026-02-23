@@ -85,7 +85,8 @@ export class CubeathonService {
 
         const resp = await s.sendTransaction(TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE));
         if (resp.status === "ERROR") {
-            throw new Error(`Transaction rejected. Check console for details.`);
+            console.error("[Cubeathon] startGame FAILED:", resp);
+            throw new Error(`Start game failed: ${resp.status}`);
         }
 
         // Poll for completion
@@ -95,7 +96,10 @@ export class CubeathonService {
             try {
                 const t = await s.getTransaction(resp.hash);
                 if (t.status === "SUCCESS") return;
-                if (t.status === "FAILED") throw new Error("Contract execution failed on-chain.");
+                if (t.status === "FAILED") {
+                    console.error("[Cubeathon] Transaction hash FAILED on-chain:", resp.hash);
+                    throw new Error("Contract execution failed on-chain.");
+                }
             } catch (e: any) {
                 if (e.message?.includes("not found")) {
                     retries++;
@@ -196,7 +200,10 @@ export class CubeathonService {
         });
 
         const resp = await s.sendTransaction(TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE));
-        if ((resp.status as any) !== "PENDING" && (resp.status as any) !== "SUCCESS") throw new Error("End session failed");
+        if (resp.status === "ERROR") {
+            console.error("[Cubeathon] endSession ERROR:", resp);
+            throw new Error(`End session failed: ${resp.status}`);
+        }
 
         let retries = 0;
         while (retries < 20) {

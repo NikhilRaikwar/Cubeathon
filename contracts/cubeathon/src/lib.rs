@@ -297,13 +297,11 @@ impl CubeathonContract {
         let game_hub = GameHubClient::new(&env, &hub_addr);
         game_hub.end_game(&session_id, &p1_won);
 
-        // Add to leaderboard
-        Self::add_to_leaderboard(
-            &env,
-            winner.clone(),
-            if p1_won { p1_time } else { p2_time },
-            session_id,
-        );
+        // Add to leaderboard (only if time > 0)
+        let winner_time = if p1_won { p1_time } else { p2_time };
+        if winner_time > 0 {
+            Self::add_to_leaderboard(&env, winner.clone(), winner_time, session_id);
+        }
 
         // Persist winner state
         env.storage().temporary().set(&key, &state);
