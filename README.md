@@ -2,6 +2,8 @@
 
 **Cubeathon** is a high-intensity, cyber-neon racing prototype built for the **Stellar ZK Gaming Hackathon 2026**. It leverages Zero-Knowledge Proofs (ZKP) and Soroban smart contracts to create a "Fair by Design" competitive environment where speed is verified and cheating is mathematically impossible.
 
+![Cubeathon Lobby](frontend/src/assets/game.png)
+
 [![ZK Powered](https://img.shields.io/badge/ZK-Powered-cyan.svg)](#) [![Noir ZK](https://img.shields.io/badge/Noir-ZK--Proofs-blue.svg)](#) [![Soroban](https://img.shields.io/badge/Powered%20By-Soroban-purple.svg)](#) [![Stellar Testnet](https://img.shields.io/badge/Network-Testnet-green.svg)](#)
 
 ---
@@ -21,6 +23,12 @@ In most web games, leaderboard data is easily manipulated by intercepting API ca
 2.  **Verifiable Execution**: As you race, your movement journal is tracked. Upon crossing the finish line, the game generates a **ZK Proof (via Noir)**.
 3.  **On-Chain Verification**: The Soroban smart contract acts as the ultimate referee. It takes the proof, your time, and the session ID. It re-verifies that your path safely navigated the obstacles derived from that session's seed.
 4.  **No ZK, No Entry**: If you collided with a block (even if you "hacked" the client to ignore it), the ZK proof will fail, and the contract will reject your leaderboard entry.
+
+## 📸 Visual Walkthrough
+
+| 🏎️ Ready to Race | 💥 Crash (Not Recorded) | 🏆 ZK-Verified Win |
+| :---: | :---: | :---: |
+| ![Start](frontend/src/assets/start.png) | ![Crash](frontend/src/assets/crash.png) | ![Win](frontend/src/assets/win.png) |
 
 ---
 
