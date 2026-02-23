@@ -100,7 +100,7 @@ export default function App() {
 
   const [page, setPage] = useState<AppPage>('games');
   const [gameActive, setGameActive] = useState(false);
-  const [sessionId] = useState(createSessionId);
+  const [sessionId, setSessionId] = useState(createSessionId);
 
   // Create-mode form state
   const [createMode, setCreateMode] = useState<CreateMode>('create');
@@ -150,6 +150,8 @@ export default function App() {
   };
 
   const handlePrepare = useCallback(async () => {
+    const freshSession = createSessionId();
+    setSessionId(freshSession);
     setError(null); setSuccess(null);
     if (!isConnected || !publicKey) {
       setError('Wallet not connected. Please connect your wallet first.');
@@ -168,7 +170,7 @@ export default function App() {
       setLoading(true);
       const signer = getContractSigner();
       const xdr = await cubeathonService.prepareStartGame(
-        sessionId, player1Address, simulationP2, p1Points, p1Points, signer
+        freshSession, player1Address, simulationP2, p1Points, p1Points, signer
       );
       setExportedXDR(xdr);
       setSuccess('Auth entry ready! Copy the XDR below and send it to Player 2.');
@@ -180,6 +182,8 @@ export default function App() {
   }, [isConnected, publicKey, player1Address, player1Points, sessionId, getContractSigner]);
 
   const handleQuickstart = useCallback(async () => {
+    const freshSession = createSessionId();
+    setSessionId(freshSession);
     setError(null); setSuccess(null);
     if (!quickstartAvailable) {
       setError('Quickstart requires dev wallets (VITE_DEV_* secrets).');
@@ -187,6 +191,7 @@ export default function App() {
     }
     try {
       setLoading(true);
+      console.warn(`[Cubeathon] Quickstart starting Session: ${freshSession}`);
       await devWalletService.initPlayer(1);
       const p1Addr = devWalletService.getPublicKey();
       const p1Signer = devWalletService.getSigner();
@@ -194,26 +199,30 @@ export default function App() {
       const p2Addr = devWalletService.getPublicKey();
       const p2Signer = devWalletService.getSigner();
       const points = parsePoints('0.1') ?? 1000000n;
+
+      console.info(`[Cubeathon] Creating on-chain session...`);
       const p1XDR = await cubeathonService.prepareStartGame(
-        sessionId, p1Addr, p2Addr, points, points, p1Signer
+        freshSession, p1Addr, p2Addr, points, points, p1Signer
       );
       await cubeathonService.importAndStartGame(p1XDR, p2Addr, points, p2Signer);
+
       await connectDev(1);
       setActiveGame({
-        sessionId,
+        sessionId: freshSession,
         player1: p1Addr,
         player2: p2Addr,
         player1Points: points,
         player2Points: points,
       });
-      setSuccess('Quickstart complete! Game created on-chain.');
+      setSuccess(`Quickstart complete! Session ${freshSession} initialized on-chain.`);
       setGameActive(true);
     } catch (err) {
+      console.error('[Cubeathon] Quickstart FAILED:', err);
       setError(err instanceof Error ? err.message : 'Quickstart failed');
     } finally {
       setLoading(false);
     }
-  }, [quickstartAvailable, sessionId, connectDev]);
+  }, [quickstartAvailable, connectDev]);
 
   const handleImport = useCallback(async () => {
     setError(null); setSuccess(null);

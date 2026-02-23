@@ -355,9 +355,14 @@ export class CubeathonService {
         if (resp.status === "ERROR") {
             throw new Error(`Tx error: ${(resp as any).errorResult?.toXDR?.() ?? "unknown"}`);
         }
-        while (resp.status === "PENDING") {
+        let finalResp: any = resp;
+        while (finalResp.status === "PENDING") {
             await new Promise((r) => setTimeout(r, 2000));
-            resp = await s.getTransaction(resp.hash) as any;
+            finalResp = await s.getTransaction(finalResp.hash);
+        }
+
+        if (finalResp.status !== "SUCCESS") {
+            throw new Error(`Session initialization failed with status: ${finalResp.status}`);
         }
     }
 
