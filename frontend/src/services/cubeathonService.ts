@@ -336,19 +336,20 @@ export class CubeathonService {
         }
 
         // 4. Update the transaction with BOTH signed auth entries
-        // Rebuild the transaction properly with the signed auth entries
+        // Refresh account from server to ensure latest sequence number (prevents txBAD_SEQ)
+        const freshAccount = await s.getAccount(player2);
+
         const finalOp = contract.call("start_game", ...args);
         (finalOp as any).auth = auth;
 
-        const finalTx = new TransactionBuilder(account, {
-            fee: "200000", // Max priority for final fix
+        const finalTx = new TransactionBuilder(freshAccount, {
+            fee: "200000",
             networkPassphrase: NETWORK_PASSPHRASE,
         }).addOperation(finalOp).setTimeout(30).build();
 
         // 5. Final simulation with REAL auth to get the PERFECT footprint
         const finalSim = await s.simulateTransaction(finalTx);
         if (StellarRpc.Api.isSimulationError(finalSim)) {
-            // Log full simulation error for debugging
             console.error("[Cubeathon] Final simulation failed:", finalSim);
             throw new Error(`Final simulation failed: ${finalSim.error}`);
         }
@@ -367,9 +368,13 @@ export class CubeathonService {
         );
         if (resp.status === "ERROR") {
             console.error("[Cubeathon] sendTransaction ERROR:", resp);
-            const errXdr = (resp as any).errorResultXdr || (resp as any).errorResult?.toXDR?.();
-            if (errXdr) console.error("[Cubeathon] errorResultXdr:", errXdr);
-            throw new Error(`Tx error: ${errXdr || "unknown status: ERROR. Check console."}`);
+            let errXdr = (resp as any).errorResultXdr || (resp as any).errorResult?.toXDR?.();
+            // Handle Uint8Array from some RPC responses
+            if (errXdr instanceof Uint8Array) {
+                errXdr = Buffer.from(errXdr).toString("base64");
+            }
+            if (errXdr) console.error("[Cubeathon] errorResultXdr (Base64):", errXdr);
+            throw new Error(`Tx error: ${errXdr || "unknown status: ERROR"}`);
         }
         let finalResp: any = resp;
         let retries = 0;
