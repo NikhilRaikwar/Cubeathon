@@ -59,12 +59,8 @@ async function buildAndSimulate(
     contractId: string = CUBEATHON_CONTRACT_ID,
 ) {
     if (!contractId) {
-        throw new Error(
-            "VITE_CUBEATHON_CONTRACT_ID is not set in .env. " +
-            "Run: bun run deploy  (or set it manually after deploying the contract)"
-        );
+        throw new Error("VITE_CUBEATHON_CONTRACT_ID is not set in .env.");
     }
-
     const s = makeServer();
     const account = await s.getAccount(sourceAddress);
     const contract = new Contract(contractId);
@@ -104,7 +100,7 @@ async function assembleSignSend(
         TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE)
     );
     if (resp.status === "ERROR") {
-        throw new Error(`Submit error: ${(resp as any).errorResult?.toXDR?.() ?? resp.status}`);
+        throw new Error(`Submit error: ${resp.status}`);
     }
     while (resp.status === "PENDING") {
         await new Promise((r) => setTimeout(r, 2000));
@@ -119,28 +115,6 @@ async function assembleSignSend(
 
 // ── ScVal → JS helpers ───────────────────────────────────────────────────────
 
-function scValToProgress(v: xdr.ScVal): PlayerProgress {
-    const raw = scValToNative(v) as any;
-    return {
-        max_time_ms: BigInt(raw.max_time_ms ?? 0),
-    };
-}
-
-function scValToGameState(v: xdr.ScVal): GameState {
-    const raw = scValToNative(v) as any;
-    return {
-        player1: raw.player1?.toString?.() ?? "",
-        player2: raw.player2?.toString?.() ?? "",
-        p1_points: BigInt(raw.p1_points ?? 0),
-        p2_points: BigInt(raw.p2_points ?? 0),
-        p1_progress: scValToProgress(xdr.ScVal.fromXDR((raw.p1_progress as any).toXDR?.() ?? "", "raw")),
-        p2_progress: scValToProgress(xdr.ScVal.fromXDR((raw.p2_progress as any).toXDR?.() ?? "", "raw")),
-        winner: raw.winner ? raw.winner.toString() : null,
-        started_at: BigInt(raw.started_at ?? 0),
-    };
-}
-
-// simpler approach – just cast the native result
 function nativeToGameState(raw: any): GameState {
     const toProgress = (p: any): PlayerProgress => ({
         max_time_ms: BigInt(p?.max_time_ms ?? 0),
@@ -170,13 +144,9 @@ function nativeToLeaderboardEntry(raw: any): LeaderboardEntry {
 
 export class CubeathonService {
 
-    // ── Read: get_game ─────────────────────────────────────────────────────────
-
     async getGame(sessionId: number): Promise<GameState | null> {
         try {
-            const simSource =
-                import.meta.env.VITE_DEV_PLAYER1_ADDRESS ||
-                "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
+            const simSource = import.meta.env.VITE_DEV_PLAYER1_ADDRESS || "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
             const { sim } = await buildAndSimulate(
                 "get_game",
                 [nativeToScVal(sessionId, { type: "u32" })],
@@ -185,34 +155,26 @@ export class CubeathonService {
             const retval = (sim as any).result?.retval ?? (sim as any).returnValue;
             if (!retval) return null;
             const native = scValToNative(retval);
-            if (!native) return null;
-            return nativeToGameState(native);
+            return native ? nativeToGameState(native) : null;
         } catch (err) {
             console.warn("[CubeathonService.getGame]", err);
             return null;
         }
     }
 
-    // ── Read: get_leaderboard ──────────────────────────────────────────────────
-
     async getLeaderboard(): Promise<LeaderboardEntry[]> {
         try {
-            const simSource =
-                import.meta.env.VITE_DEV_PLAYER1_ADDRESS ||
-                "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
+            const simSource = import.meta.env.VITE_DEV_PLAYER1_ADDRESS || "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
             const { sim } = await buildAndSimulate("get_leaderboard", [], simSource);
             const retval = (sim as any).result?.retval ?? (sim as any).returnValue;
             if (!retval) return [];
             const native = scValToNative(retval);
-            if (!Array.isArray(native)) return [];
-            return native.map(nativeToLeaderboardEntry);
+            return Array.isArray(native) ? native.map(nativeToLeaderboardEntry) : [];
         } catch (err) {
             console.warn("[CubeathonService.getLeaderboard]", err);
             return [];
         }
     }
-
-    // ── Write: start_game – Step 1 (Player 1 signs + exports auth XDR) ─────────
 
     async prepareStartGame(
         sessionId: number,
@@ -221,7 +183,6 @@ export class CubeathonService {
         player1Points: bigint,
         player2Points: bigint,
         player1Signer: ContractSigner,
-        ttlMinutes = MULTI_SIG_AUTH_TTL_MINUTES,
     ): Promise<string> {
         const { sim } = await buildAndSimulate(
             "start_game",
@@ -232,15 +193,10 @@ export class CubeathonService {
                 nativeToScVal(player1Points, { type: "i128" }),
                 nativeToScVal(player2Points, { type: "i128" }),
             ],
-            player2, // source = player2 so simulation can build auth entries for both
+            player2,
         );
 
-        if (!(sim as any).result?.auth?.length) {
-            throw new Error(
-                "No auth entries returned from simulation. " +
-                "This usually means the contract ID is wrong or the Game Hub is not reachable."
-            );
-        }
+        if (!(sim as any).result?.auth?.length) throw new Error("No auth entries returned.");
 
         let p1Entry: xdr.SorobanAuthorizationEntry | null = null;
         for (const entry of (sim as any).result.auth as xdr.SorobanAuthorizationEntry[]) {
@@ -250,11 +206,9 @@ export class CubeathonService {
                 if (addr === player1) { p1Entry = entry; break; }
             } catch { continue; }
         }
-        if (!p1Entry) throw new Error(`No auth entry found for Player 1 (${player1.slice(0, 8)}…)`);
+        if (!p1Entry) throw new Error("No auth entry found for Player 1");
 
-        const validUntil = await calculateValidUntilLedger(RPC_URL, ttlMinutes);
-        if (!player1Signer.signAuthEntry) throw new Error("signAuthEntry not available on signer");
-
+        const validUntil = await calculateValidUntilLedger(RPC_URL, MULTI_SIG_AUTH_TTL_MINUTES);
         const signed = await authorizeEntry(
             p1Entry,
             async (preimage) => {
@@ -271,8 +225,6 @@ export class CubeathonService {
         return signed.toXDR("base64");
     }
 
-    // ── Write: start_game – Step 2 (Player 2 injects P1 auth + submits tx) ─────
-
     async importAndStartGame(
         player1AuthXDR: string,
         player2: string,
@@ -280,7 +232,6 @@ export class CubeathonService {
         player2Signer: ContractSigner,
     ): Promise<void> {
         const { sessionId, player1, player1Points } = this.parseAuthEntry(player1AuthXDR);
-
         const args = [
             nativeToScVal(sessionId, { type: "u32" }),
             nativeToScVal(player1, { type: "address" }),
@@ -293,30 +244,21 @@ export class CubeathonService {
         const account = await s.getAccount(player2);
         const contract = new Contract(CUBEATHON_CONTRACT_ID);
 
-        // 1. Build the base transaction
-        const baseTx = new TransactionBuilder(account, {
-            fee: "200000",
-            networkPassphrase: NETWORK_PASSPHRASE,
-        }).addOperation(contract.call("start_game", ...args)).setTimeout(30).build();
+        // 1. Initial simulation to get the P2 auth placeholder
+        const baseTx = new TransactionBuilder(account, { fee: "200000", networkPassphrase: NETWORK_PASSPHRASE })
+            .addOperation(contract.call("start_game", ...args)).setTimeout(30).build();
 
-        // 2. Initial simulation to get the placeholders
-        let sim = await s.simulateTransaction(baseTx);
-        if (StellarRpc.Api.isSimulationError(sim)) {
-            throw new Error(`Simulation error: ${sim.error}`);
-        }
+        const sim = await s.simulateTransaction(baseTx);
+        if (StellarRpc.Api.isSimulationError(sim)) throw new Error(`Simulation failed: ${sim.error}`);
 
         const auth: xdr.SorobanAuthorizationEntry[] = (sim as any).result?.auth ?? [];
         const p1Signed = xdr.SorobanAuthorizationEntry.fromXDR(player1AuthXDR, "base64");
         const p1AddrKey = Address.fromScAddress(p1Signed.credentials().address().address()).toString();
+        const validUntil = await calculateValidUntilLedger(RPC_URL, 60);
 
-        // Use a much longer TTL to prevent expiration during network lag
-        const validUntil = await calculateValidUntilLedger(RPC_URL, 30); // 30 mins
-
-        // 3. Populate auth entries with signatures
         for (let i = 0; i < auth.length; i++) {
             const creds = auth[i].credentials();
             if (creds.switch().name !== "sorobanCredentialsAddress") continue;
-
             const addr = Address.fromScAddress(creds.address().address()).toString();
             if (addr === p1AddrKey) {
                 auth[i] = p1Signed;
@@ -337,42 +279,33 @@ export class CubeathonService {
             }
         }
 
-        // 4. Update the simulation result with BOTH signed authorizations
-        // This is CRITICAL: assembleTransaction uses the sim's result to build the final footprint
-        const simWithAuths = {
-            ...sim,
-            result: {
-                ...(sim as any).result,
-                auth: auth
-            }
-        };
-
-        // 5. Refresh account sequence and ASSEMBLE
+        // 2. Refresh Sequence & Re-build operation with embedded auth
         const freshAccount = await s.getAccount(player2);
-        const finalTx = new TransactionBuilder(freshAccount, {
-            fee: "200000",
-            networkPassphrase: NETWORK_PASSPHRASE,
-        }).addOperation(contract.call("start_game", ...args)).setTimeout(30).build();
+        const finalOp = contract.call("start_game", ...args);
+        (finalOp as any).auth = auth;
 
-        // assembleTransaction merges the footprint and auth into the final transaction
-        const assembled = StellarRpc.assembleTransaction(finalTx, simWithAuths as any).build();
+        const finalTx = new TransactionBuilder(freshAccount, { fee: "200000", networkPassphrase: NETWORK_PASSPHRASE })
+            .addOperation(finalOp).setTimeout(30).build();
 
-        // 6. Sign and Submit
-        if (!player2Signer.signTransaction) throw new Error("signTransaction not available");
-        const { signedTxXdr, error } = await player2Signer.signTransaction(
-            assembled.toXDR(),
-            { networkPassphrase: NETWORK_PASSPHRASE, address: player2 }
-        );
+        // 3. Re-simulate with AUTH to get perfect footprint
+        const finalSim = await s.simulateTransaction(finalTx);
+        if (StellarRpc.Api.isSimulationError(finalSim)) {
+            console.error("[Cubeathon] Final simulation failed:", finalSim);
+            throw new Error(`Execution would fail on-chain: ${finalSim.error}`);
+        }
+
+        // 4. Assemble, Sign and Send
+        const assembled = StellarRpc.assembleTransaction(finalTx, finalSim).build();
+        if (!player2Signer.signTransaction) throw new Error("signTransaction missing");
+        const { signedTxXdr, error } = await player2Signer.signTransaction(assembled.toXDR(), { networkPassphrase: NETWORK_PASSPHRASE, address: player2 });
         if (error) throw new Error(error.message);
 
-        let resp = await s.sendTransaction(
-            TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE)
-        );
+        let resp = await s.sendTransaction(TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE));
         if (resp.status === "ERROR") {
-            let errXdr = (resp as any).errorResultXdr || (resp as any).errorResult?.toXDR?.();
-            if (errXdr instanceof Uint8Array) errXdr = Buffer.from(errXdr).toString("base64");
-            console.error("[Cubeathon] sendTransaction ERROR:", resp, "XDR:", errXdr);
-            throw new Error(`Tx error: ${errXdr || "unknown status: ERROR"}`);
+            const errXdr = (resp as any).errorResultXdr || (resp as any).errorResult?.toXDR?.();
+            const b64 = errXdr instanceof Uint8Array ? Buffer.from(errXdr).toString("base64") : (errXdr || "No XDR");
+            console.error("[Cubeathon] sendTransaction ERROR:", resp, "XDR:", b64);
+            throw new Error(`Tx Rejected: ${b64}`);
         }
 
         let finalResp: any = resp;
@@ -382,93 +315,39 @@ export class CubeathonService {
             try {
                 finalResp = await s.getTransaction(resp.hash);
             } catch (err: any) {
-                if (err.message?.includes("NOT_FOUND")) {
-                    finalResp = { status: "NOT_FOUND", hash: resp.hash };
-                } else { throw err; }
+                if (err.message?.includes("NOT_FOUND")) { finalResp = { status: "NOT_FOUND", hash: resp.hash }; } else { throw err; }
             }
             if (finalResp.status === "NOT_FOUND") retries++;
         }
 
         if (finalResp.status !== "SUCCESS") {
-            console.error(`[Cubeathon] Transaction FAILED. Status: ${finalResp.status}`, finalResp);
             const meta = finalResp.resultMetaXdr;
+            let b64 = "No Meta";
             if (meta) {
-                console.error(`[Cubeathon] Failure resultMetaXdr (Base64):`, meta);
-                console.warn("[Cubeathon] Decode at https://lab.stellar.org/#xdr-viewer?type=TransactionMeta&network=testnet");
+                try {
+                    b64 = (typeof meta === 'string') ? meta : (meta.toXDR ? meta.toXDR("base64") : JSON.stringify(meta));
+                } catch { b64 = "Unstringifiable Meta"; }
             }
-            throw new Error(`Session initialization failed: ${finalResp.status}`);
+            console.error(`[Cubeathon] Transaction FAILED (On-Chain). Status: ${finalResp.status}`, "Meta XDR:", b64);
+            throw new Error(`On-chain error: ${finalResp.status}. Check console for Meta XDR.`);
         }
     }
 
-    // ── Write: submit_score ────────────────────────────────────────────────────
-
-    async submitScore(
-        sessionId: number,
-        player: string,
-        timeMs: bigint,
-        signer: ContractSigner,
-        proof?: Uint8Array,
-        journalHash?: Uint8Array,
-    ): Promise<boolean> {
+    async submitScore(sessionId: number, player: string, timeMs: bigint, signer: ContractSigner, proof?: Uint8Array, journalHash?: Uint8Array): Promise<boolean> {
         const proofBytes = proof ?? new Uint8Array(0);
         const hashBytes = journalHash ?? new Uint8Array(32);
-
-        return await assembleSignSend(
-            "submit_score",
-            [
-                nativeToScVal(sessionId, { type: "u32" }),
-                nativeToScVal(player, { type: "address" }),
-                nativeToScVal(timeMs, { type: "u64" }),
-                xdr.ScVal.scvBytes(Buffer.from(proofBytes)),
-                xdr.ScVal.scvBytes(Buffer.from(hashBytes)),
-            ],
-            player,
-            signer,
-        ) as boolean;
+        return await assembleSignSend("submit_score", [nativeToScVal(sessionId, { type: "u32" }), nativeToScVal(player, { type: "address" }), nativeToScVal(timeMs, { type: "u64" }), xdr.ScVal.scvBytes(Buffer.from(proofBytes)), xdr.ScVal.scvBytes(Buffer.from(hashBytes))], player, signer) as boolean;
     }
 
-    // ── Write: end_session ───────────────────────────────────────────────────
-
-    async endSession(
-        sessionId: number,
-        adminAddress: string,
-        adminSigner: ContractSigner,
-    ): Promise<string> {
-        return await assembleSignSend(
-            "end_session",
-            [nativeToScVal(sessionId, { type: "u32" })],
-            adminAddress,
-            adminSigner,
-        ) as string;
-    }
-
-    // ── Utility: parse auth entry XDR → game params ─────────────────────────────
-
-    parseAuthEntry(xdrBase64: string): {
-        sessionId: number;
-        player1: string;
-        player1Points: bigint;
-    } {
+    parseAuthEntry(xdrBase64: string) {
         const entry = xdr.SorobanAuthorizationEntry.fromXDR(xdrBase64, "base64");
         const creds = entry.credentials();
-        if (creds.switch().name !== "sorobanCredentialsAddress") {
-            throw new Error(`Unsupported credential type: ${creds.switch().name}`);
-        }
         const player1 = Address.fromScAddress(creds.address().address()).toString();
-        const fn = entry.rootInvocation().function().contractFn();
-        const fnName = fn.functionName().toString();
-        if (fnName !== "start_game") {
-            throw new Error(`Expected "start_game" in auth entry, got "${fnName}"`);
-        }
-        const args = fn.args();
+        const args = entry.rootInvocation().function().contractFn().args();
         return {
-            sessionId: args[0].u32(),
+            sessionId: Number(scValToNative(args[0])),
             player1,
-            player1Points: args[3].i128() ? (() => {
-                const hi = args[3].i128().hi().toBigInt() << 64n;
-                const lo = args[3].i128().lo().toBigInt();
-                return hi | lo;
-            })() : 0n,
+            player1Points: BigInt(scValToNative(args[3])),
         };
     }
 }
