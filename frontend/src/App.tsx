@@ -201,6 +201,23 @@ export default function App() {
       const points = parsePoints('0.1') ?? 1000000n;
 
       console.info(`[Cubeathon] Creating on-chain session...`);
+
+      const ensureFunded = async (addr: string) => {
+        try {
+          const rpc = import.meta.env.VITE_SOROBAN_RPC_URL;
+          // Use horizon to check account existence
+          const horizon = rpc.includes('lightsail') ? 'https://horizon-testnet.stellar.org' : rpc.replace('rpc', 'horizon');
+          const resp = await fetch(`${horizon}/accounts/${addr}`);
+          if (resp.status === 404) {
+            console.log(`[DevWallet] Funding account ${addr} via Friendbot...`);
+            await fetch(`https://friendbot.stellar.org/?addr=${addr}`);
+            await new Promise(r => setTimeout(r, 5000));
+          }
+        } catch (e) { console.warn(`Funding check failed`, e); }
+      };
+      await ensureFunded(p1Addr);
+      await ensureFunded(p2Addr);
+
       const p1XDR = await cubeathonService.prepareStartGame(
         freshSession, p1Addr, p2Addr, points, points, p1Signer
       );
