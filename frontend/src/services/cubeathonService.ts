@@ -337,7 +337,8 @@ export class CubeathonService {
         };
 
         const freshTx = new TransactionBuilder(account, {
-            fee: BASE_FEE, networkPassphrase: NETWORK_PASSPHRASE,
+            fee: "50000", // High fee for hackathon reliability
+            networkPassphrase: NETWORK_PASSPHRASE,
         }).addOperation(contract.call("start_game", ...args)).setTimeout(30).build();
 
         const assembled = StellarRpc.assembleTransaction(freshTx, simWithAuths as any).build();
