@@ -280,7 +280,7 @@ if (shouldEnsureMock) {
     console.log(`Deploying ${mock.packageName}...`);
     try {
       const result =
-        await $`stellar contract deploy --wasm ${mock.wasmPath} --source-account ${adminSecret} --network ${NETWORK}`.text();
+        await $`/usr/local/bin/stellar contract deploy --wasm ${mock.wasmPath} --source-account ${adminSecret} --network ${NETWORK}`.text();
       mockGameHubId = result.trim();
       deployed[mock.packageName] = mockGameHubId;
       console.log(`✅ ${mock.packageName} deployed: ${mockGameHubId}\n`);
@@ -298,7 +298,7 @@ for (const contract of contracts) {
   try {
     console.log("  Installing WASM...");
     const installResult =
-      await $`stellar contract install --wasm ${contract.wasmPath} --source-account ${adminSecret} --network ${NETWORK}`.text();
+      await $`/usr/local/bin/stellar contract install --wasm ${contract.wasmPath} --source-account ${adminSecret} --network ${NETWORK}`.text();
     const wasmHash = installResult.trim();
     console.log(`  WASM hash: ${wasmHash}`);
 
@@ -317,7 +317,7 @@ for (const contract of contracts) {
     }
 
     const deployResult =
-      await $`stellar contract deploy --wasm-hash ${wasmHash} --source-account ${adminSecret} --network ${NETWORK} -- ${initArgs.split(" ")}`.text();
+      await $`/usr/local/bin/stellar contract deploy --wasm-hash ${wasmHash} --source-account ${adminSecret} --network ${NETWORK} -- ${initArgs.split(" ")}`.text();
     const contractId = deployResult.trim();
     deployed[contract.packageName] = contractId;
     console.log(`✅ ${contract.packageName} deployed: ${contractId}\n`);

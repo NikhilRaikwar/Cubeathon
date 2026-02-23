@@ -173,12 +173,9 @@ export default function App() {
 
     try {
       setLoading(true);
-      const signer = getContractSigner();
-      const xdr = await cubeathonService.prepareStartGame(
-        freshSession, player1Address, simulationP2, p1Points, p1Points, signer
-      );
-      setExportedXDR(xdr);
-      setSuccess('Auth entry ready! Copy the XDR below and send it to Player 2.');
+      const data = await cubeathonService.prepareStartGame(freshSession, player1Address, p1Points);
+      setExportedXDR(data);
+      setSuccess('Game info ready! Copy the code below and send it to Player 2.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Prepare failed.');
     } finally {
@@ -239,18 +236,23 @@ export default function App() {
       console.info("[Cubeathon] Accounts ready. Waiting 3s for RPC sync...");
       await new Promise(r => setTimeout(r, 3000));
 
-      const p1XDR = await cubeathonService.prepareStartGame(
-        freshSession, p1Addr, p2Addr, points, points, p1Signer
+      console.info("[Cubeathon] Initializing game transaction...");
+      await cubeathonService.startGame(
+        freshSession, p1Addr, p2Addr, points, points, p2Signer
       );
-      await cubeathonService.importAndStartGame(p1XDR, p2Addr, points, p2Signer);
+
+      console.info("[Cubeathon] Transaction SUCCESS! Fetching game state...");
+      const state = await cubeathonService.getGame(freshSession);
+
+      if (!state) throw new Error("Could not fetch game state after creation.");
 
       await connectDev(1);
       setActiveGame({
         sessionId: freshSession,
-        player1: p1Addr,
-        player2: p2Addr,
-        player1Points: points,
-        player2Points: points,
+        player1: state.player1,
+        player2: state.player2,
+        player1Points: state.p1_points,
+        player2Points: state.p2_points,
       });
       setSuccess(`Quickstart complete! Session ${freshSession} initialized on-chain.`);
       setGameActive(true);
@@ -280,13 +282,19 @@ export default function App() {
         player1Points: (Number(parsed.player1Points) / 1e7).toFixed(2),
       });
       const signer = getContractSigner();
-      await cubeathonService.importAndStartGame(importXDR.trim(), publicKey, p2Points, signer);
+      await cubeathonService.startGame(
+        parsed.sessionId, parsed.player1, publicKey, parsed.player1Points, p2Points, signer
+      );
+
+      const state = await cubeathonService.getGame(parsed.sessionId);
+      if (!state) throw new Error("Could not fetch game state.");
+
       setActiveGame({
         sessionId: parsed.sessionId,
-        player1: parsed.player1,
-        player2: publicKey,
-        player1Points: parsed.player1Points,
-        player2Points: p2Points,
+        player1: state.player1,
+        player2: state.player2,
+        player1Points: state.p1_points,
+        player2Points: state.p2_points,
       });
       setSuccess('Game created on-chain! Starting game…');
       setGameActive(true);
@@ -356,9 +364,7 @@ export default function App() {
             onBack={() => setGameActive(false)}
             onStandingsRefresh={() => { }}
             onGameComplete={(w) => {
-              const jackpot = (activeGame?.player1Points ?? 0n) + (activeGame?.player2Points ?? 0n);
-              const prize = (Number(jackpot) / 1e7).toFixed(2);
-              setSuccess(`🏁 Session Finalized! Winner: ${shortAddr(w)} survived longer and took the ${prize} Points jackpot!`);
+              setSuccess(`🏁 Session Finalized! Winner: ${w} survived longer!`);
               setGameActive(false);
             }}
           />

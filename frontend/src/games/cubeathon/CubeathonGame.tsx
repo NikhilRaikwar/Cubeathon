@@ -16,11 +16,6 @@ const ROAD_W = ROAD_RIGHT - ROAD_LEFT;
 
 const CUBE_W = 52;
 const CUBE_H = 52;
-const CUBE_SCREEN_Y = CANVAS_H - 80;
-
-const WALL_H = 36;
-const GAP_W = 140;
-const WALL_GAP_PADDING = 14;
 
 const INITIAL_SPEED = 8.0;
 const SPEED_SCALE_RATE = 0.52;
@@ -36,15 +31,6 @@ const HORIZON_Y = 120;
 const FOV = 350;
 
 interface Wall { worldY: number; gapX: number; size: number; }
-
-// localStorage keys for player progress persistence
-const storageKey = (sid: number, addr: string, prop: string) =>
-    `cubeathon:${sid}:${addr.slice(0, 8)}:${prop}`;
-
-interface LevelRecord {
-    level: number;
-    timeMs: number;
-}
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -63,9 +49,9 @@ export interface CubeathonGameProps {
 
 // ─────────────────────────────────────────────────────────
 export function CubeathonGame({
-    userAddress, sessionId, player1, player2, availablePoints,
+    userAddress, sessionId, player1, player2,
     isOnChain = false,
-    onBack, onStandingsRefresh, onGameComplete
+    onBack, onStandingsRefresh
 }: CubeathonGameProps) {
     const { getContractSigner } = useWallet();
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -75,8 +61,10 @@ export function CubeathonGame({
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [difficulty, setDifficulty] = useState<Difficulty>('normal');
     const difficultyRef = useRef<Difficulty>('normal');
-    // ZK proof simulation state (shown after each run for hackathon demo)
+
     const [zkProof, setZkProof] = useState<{ hash: string; timeMs: number } | null>(null);
+    const [finishing, setFinishing] = useState(false);
+    const [finalized, setFinalized] = useState(false);
 
     // All mutable game state in a ref
     const g = useRef({
@@ -91,7 +79,6 @@ export function CubeathonGame({
         lastSpawnY: 0,
         levelStartTs: 0,
         levelTime: 0,
-        highScoreMs: 0,
         countdownN: 3,
         countdownTs: 0,
         rngSeed: sessionId,
@@ -100,10 +87,6 @@ export function CubeathonGame({
 
     const [phase, setPhase] = useState<typeof g.current.phase>('idle');
     const [levelTime, setLevelTime] = useState(0);
-
-    const isPlayer1 = userAddress === player1;
-    const isResume = false; // Endless mode always starts fresh for now
-    const resumeLevel = 1;
 
     const refreshLeaderboard = useCallback(async () => {
         const board = await cubeathonService.getLeaderboard();
@@ -204,26 +187,19 @@ export function CubeathonGame({
             const w = CUBE_W * pBase.scale;
             const h = CUBE_H * pBase.scale;
 
-            // Draw 'size' number of ADJACENT cubes (chipki hui boundaries)
             for (let i = 0; i < wall.size; i++) {
-                const bx = pBase.x + (i * w); // No spacing between blocks in a cluster
-
+                const bx = pBase.x + (i * w);
                 if (bx + w < 0 || bx > CANVAS_W) continue;
-
                 ctx.fillStyle = '#ef4444';
                 ctx.shadowBlur = 10; ctx.shadowColor = '#ef4444';
                 ctx.fillRect(bx, pBase.y - h, w, h);
                 ctx.shadowBlur = 0;
-
-                // Details for each cube
                 ctx.strokeStyle = '#000000'; ctx.lineWidth = 1;
                 ctx.strokeRect(bx, pBase.y - h, w, h);
-                ctx.fillStyle = 'rgba(255,255,255,0.2)';
-                ctx.fillRect(bx, pBase.y - h, w, 4 * pBase.scale);
             }
         }
 
-        // ── Cube (Neon Cyan Player) – original square with glow
+        // ── Cube (Neon Cyan Player)
         const pCube = project(s.cubeX, -s.cameraY + 5);
         if (pCube) {
             const cw = CUBE_W * pCube.scale;
@@ -236,7 +212,7 @@ export function CubeathonGame({
             ctx.shadowBlur = 0;
         }
 
-        // ── Live Timer (drawn on canvas top-right during play)
+        // ── Live Timer
         if (s.phase === 'playing' || s.phase === 'countdown') {
             const elapsed = s.phase === 'playing' ? (performance.now() - s.levelStartTs) : 0;
             const secs = (elapsed / 1000).toFixed(2);
@@ -261,11 +237,9 @@ export function CubeathonGame({
 
     // ─── GAME LOGIC ────────────────────────────────────────
     const submitFinalScore = useCallback(async (timeMs: number) => {
-        // Generate a deterministic 32-byte journal_hash (Poseidon/Commitment simulation)
         const raw = `${sessionId}:${userAddress}:${Math.floor(timeMs)}`;
         const encoder = new TextEncoder();
         const data = encoder.encode(raw);
-        // Simple 256-bit bitwise hash for prototype demo (replaces zeros in contract call)
         const hashBytes = new Uint8Array(32);
         for (let i = 0; i < data.length; i++) {
             hashBytes[i % 32] ^= data[i] + i;
@@ -273,28 +247,34 @@ export function CubeathonGame({
         const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
         setZkProof({ hash: hashHex, timeMs });
 
-        if (!isOnChain) {
-            console.info(`[Cubeathon] Practice mode – ZK commitment: 0x${hashHex}`);
-            return;
-        }
+        if (!isOnChain) return;
 
-        console.warn(`[Cubeathon] Submitting real ZK score to contract | Session: ${sessionId}`);
         try {
             const runner = await getContractSigner();
             await cubeathonService.submitScore(
-                sessionId,
-                userAddress,
-                BigInt(Math.floor(timeMs)),
-                runner,
-                new Uint8Array(0), // proof bytes (empty for prototype simulation)
-                hashBytes          // REAL journal_hash commitment
+                sessionId, userAddress, BigInt(Math.floor(timeMs)), runner, new Uint8Array(0), hashBytes
             );
-            console.info('[Cubeathon] ON-CHAIN SUCCESS ✓');
             refreshLeaderboard();
         } catch (err) {
             console.error('[Cubeathon] Score submission FAILED:', err);
         }
-    }, [getContractSigner, sessionId, userAddress, refreshLeaderboard]);
+    }, [getContractSigner, sessionId, userAddress, refreshLeaderboard, isOnChain]);
+
+    const handleFinalize = async () => {
+        if (!isOnChain) { setPhase('idle'); return; }
+        try {
+            setFinishing(true);
+            const runner = await getContractSigner();
+            await cubeathonService.endSession(sessionId, userAddress, runner);
+            setFinalized(true);
+            refreshLeaderboard();
+            onStandingsRefresh();
+        } catch (err) {
+            console.error("[Cubeathon] Finalize failed:", err);
+        } finally {
+            setFinishing(false);
+        }
+    };
 
     const gameLoop = useCallback(() => {
         const s = g.current;
@@ -318,146 +298,68 @@ export function CubeathonGame({
             return;
         }
 
-        // ── Framerate independence logic
         const dt = s.lastTime > 0 ? (now - s.lastTime) / 16.67 : 1;
         s.lastTime = now;
 
-        // ── PLAYING
         s.levelTime = now - s.levelStartTs;
         setLevelTime(s.levelTime);
 
-        const elapsedS = s.levelTime / 1000;
-
-        // ─── Per-difficulty physics (read from ref so loop never stales) ───
         const diff = difficultyRef.current;
-        let baseStartSpd: number;
-        let scaleRate: number;
-        let steerAccel: number;
-        let maxSteerVel: number;
+        let baseStartSpd = diff === 'easy' ? 7.0 : diff === 'hard' ? 28.0 : 17.0;
+        let scaleRate = diff === 'easy' ? 0.30 : diff === 'hard' ? 1.10 : 0.70;
+        let steerAccel = diff === 'easy' ? 1.4 : diff === 'hard' ? 2.4 : 1.8;
+        let maxSteerVel = diff === 'easy' ? 18 : diff === 'hard' ? 34 : 26;
 
-        if (diff === 'easy') {
-            baseStartSpd = 7.0;
-            scaleRate = 0.30;
-            steerAccel = 1.4;
-            maxSteerVel = 18;
-        } else if (diff === 'hard') {
-            // High: 0.5× faster than previous 20 → 28
-            baseStartSpd = 28.0;
-            scaleRate = 1.10;
-            steerAccel = 2.4;
-            maxSteerVel = 34;
-        } else {
-            // Medium: 0.5× faster than previous 12 → 17
-            baseStartSpd = 17.0;
-            scaleRate = 0.70;
-            steerAccel = 1.8;
-            maxSteerVel = 26;
-        }
-
-        const currentBaseSpd = baseStartSpd + (Math.floor(elapsedS / 10) * scaleRate);
+        const currentBaseSpd = baseStartSpd + (Math.floor(s.levelTime / 10000) * scaleRate);
         const spd = currentBaseSpd * dt;
 
-        // Inertia-based steering (per-difficulty)
         if (s.moveLeft) s.cubeVelX -= steerAccel * dt;
         if (s.moveRight) s.cubeVelX += steerAccel * dt;
-
-        // Clamp velocity
+        s.cubeVelX *= Math.pow(FRICTION, dt);
         if (s.cubeVelX > maxSteerVel) s.cubeVelX = maxSteerVel;
         if (s.cubeVelX < -maxSteerVel) s.cubeVelX = -maxSteerVel;
-
-        s.cubeVelX *= Math.pow(FRICTION, dt);
         s.cubeX += s.cubeVelX * dt;
 
-        // Boundaries (Lethal)
         if (s.cubeX < 0 || s.cubeX > ROAD_W - CUBE_W) {
-            s.phase = 'dead';
-            setPhase('dead');
-            submitFinalScore(s.levelTime);
-            draw(); return;
+            s.phase = 'dead'; setPhase('dead'); draw(); return;
         }
 
         s.cameraY += spd;
-
-        // Win Condition
         if (s.cameraY >= TRACK_LENGTH) {
             s.cameraY = TRACK_LENGTH;
-            s.phase = 'done';
-            setPhase('done');
+            s.phase = 'done'; setPhase('done');
             submitFinalScore(s.levelTime);
             draw(); return;
         }
 
-        // Obstacle Spawning – 4 rotating patterns, difficulty-aware gaps & spacing
-        const diff2 = difficultyRef.current;
-        // Easy: wider gaps + closer walls, Medium: medium, High: tight gaps but longer between walls
-        const spawnGap = diff2 === 'easy' ? 180 : diff2 === 'hard' ? 130 : 150;
-        const spawnDist = diff2 === 'easy' ? 550 : diff2 === 'hard' ? 700 : 620;
+        const spawnGap = diff === 'easy' ? 180 : diff === 'hard' ? 130 : 150;
+        const spawnDist = diff === 'easy' ? 550 : diff === 'hard' ? 700 : 620;
 
         while (s.lastSpawnY > -s.cameraY - 3000 && s.lastSpawnY > -TRACK_LENGTH + 800) {
             const newY = s.lastSpawnY - spawnDist;
+            if (-newY >= TRACK_LENGTH - FINISH_CLEAR_ZONE) { s.lastSpawnY = newY; continue; }
 
-            // Clear zone before finish line (especially important for High mode)
-            if (-newY >= TRACK_LENGTH - FINISH_CLEAR_ZONE) {
-                s.lastSpawnY = newY;
-                continue;
-            }
-
-            // Rotate between 4 patterns every ~5 walls for addictive variability
             const wallIdx = Math.floor(Math.abs(newY) / spawnDist);
-            const pattern = wallIdx % 4;
             const rng = Math.abs(Math.floor(newY * 1.3) ^ s.rngSeed);
-            let gapCenter: number;
-
-            if (pattern === 1) {
-                // Zigzag: sharp alternating sides
-                gapCenter = wallIdx % 2 === 0
-                    ? 140 + (rng % Math.floor(ROAD_W / 4))
-                    : ROAD_W - 140 - (rng % Math.floor(ROAD_W / 4));
-            } else if (pattern === 2) {
-                // Tight center: forces player toward middle
-                gapCenter = ROAD_W / 2 + ((rng % 90) - 45);
-            } else if (pattern === 3) {
-                // Wide drift: obstacle cluster drifts across track
-                gapCenter = 200 + (rng % (ROAD_W - 400));
-            } else {
-                // Standard random
-                gapCenter = 150 + (rng % (ROAD_W - 300));
-            }
-
+            let gapCenter = 150 + (rng % (ROAD_W - 300));
             gapCenter = Math.max(spawnGap / 2 + 30, Math.min(ROAD_W - spawnGap / 2 - 30, gapCenter));
 
-            const leftSize2 = Math.max(1, Math.floor((gapCenter - spawnGap / 2) / CUBE_W));
-            s.walls.push({ worldY: newY, gapX: 0, size: leftSize2 });
-            const rightStart2 = gapCenter + spawnGap / 2;
-            const rightSize2 = Math.max(1, Math.floor((ROAD_W - rightStart2) / CUBE_W));
-            s.walls.push({ worldY: newY, gapX: rightStart2, size: rightSize2 });
+            const leftSize = Math.max(1, Math.floor((gapCenter - spawnGap / 2) / CUBE_W));
+            s.walls.push({ worldY: newY, gapX: 0, size: leftSize });
+            const rightStart = gapCenter + spawnGap / 2;
+            const rightSize = Math.max(1, Math.floor((ROAD_W - rightStart) / CUBE_W));
+            s.walls.push({ worldY: newY, gapX: rightStart, size: rightSize });
             s.lastSpawnY = newY;
         }
 
-        // Cleanup
-        if (s.walls.length > 0 && s.walls[0].worldY > -s.cameraY + 500) {
-            s.walls.shift();
-        }
-
-        // Collision Check
         const cL = s.cubeX, cR = s.cubeX + CUBE_W;
         for (const wall of s.walls) {
-            // Check if cube is at the same Z height as wall
             const wallZ = -wall.worldY;
             const dist = wallZ - s.cameraY;
-            if (dist < -50 || dist > 20) continue; // Collision window
-
-            // Wall cluster span
-            const bL = wall.gapX;
-            const bR = wall.gapX + (wall.size * CUBE_W);
-
-            const hit = !(cR < bL || cL > bR);
-
-            if (hit) {
-                s.phase = 'dead';
-                setPhase('dead');
-                submitFinalScore(s.levelTime);
-                draw(); return;
+            if (dist < -50 || dist > 20) continue;
+            const bL = wall.gapX, bR = wall.gapX + (wall.size * CUBE_W);
+            if (!(cR < bL || cL > bR)) {
+                s.phase = 'dead'; setPhase('dead'); draw(); return;
             }
         }
 
@@ -466,354 +368,124 @@ export function CubeathonGame({
     }, [draw, submitFinalScore]);
 
     const prepareGame = useCallback(() => {
-        g.current.phase = 'picking';
-        setPhase('picking');
+        g.current.phase = 'picking'; setPhase('picking');
     }, []);
 
     const startGame = useCallback((selectedDifficulty: Difficulty) => {
         setDifficulty(selectedDifficulty);
-        difficultyRef.current = selectedDifficulty; // sync ref immediately
-
-        // Gap width & spawn spacing per difficulty
-        const gapWidth = selectedDifficulty === 'easy' ? 200 : selectedDifficulty === 'hard' ? 280 : 220;
-        const spawnSpacing = selectedDifficulty === 'easy' ? 550 : selectedDifficulty === 'hard' ? 750 : 620;
-
+        difficultyRef.current = selectedDifficulty;
         const s = g.current;
         s.phase = 'countdown';
         s.countdownN = 3;
         s.countdownTs = performance.now();
-        s.cameraY = 0;
-        s.lastSpawnY = 0;
-        s.lastTime = 0;
-        s.walls = [];
-        s.cubeX = (ROAD_W - CUBE_W) / 2;
+        s.cameraY = 0; s.lastSpawnY = 0; s.lastTime = 0;
+        s.walls = []; s.cubeX = (ROAD_W - CUBE_W) / 2;
         s.levelTime = 0;
-
-        // 🎲 Randomize seed every attempt to prevent memorization
         s.rngSeed = Math.floor(Math.random() * 2147483647);
-
-        // Initial walls sequence
-        for (let i = 0; i < INITIAL_WALLS; i++) {
-            const y = -(800 + i * spawnSpacing);
-            const gapCenter = 200 + (Math.abs(Math.floor(y * 1.3) ^ s.rngSeed) % (ROAD_W - 400));
-            const leftSize = Math.max(1, Math.floor((gapCenter - gapWidth / 2) / CUBE_W));
-            s.walls.push({ worldY: y, gapX: 0, size: leftSize });
-            const rightStart = gapCenter + gapWidth / 2;
-            const rightSize = Math.max(1, Math.floor((ROAD_W - rightStart) / CUBE_W));
-            s.walls.push({ worldY: y, gapX: rightStart, size: rightSize });
-            s.lastSpawnY = y;
-        }
-
         setPhase('countdown');
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         rafRef.current = requestAnimationFrame(gameLoop);
     }, [gameLoop]);
 
-    const retryLevel = () => {
-        prepareGame();
-    };
-
-    // ─── KEYBOARD ─────────────────────────────────────────
     useEffect(() => {
         const dn = (e: KeyboardEvent) => {
             const key = e.key.toLowerCase();
             if (key === 'arrowleft' || key === 'a') g.current.moveLeft = true;
             if (key === 'arrowright' || key === 'd') g.current.moveRight = true;
-            if (key === 'arrowup' || key === 'w') g.current.moveUp = true;
             if (e.key === ' ') {
                 e.preventDefault();
-                const p = g.current.phase;
-                if (p === 'dead') retryLevel();
-                else if (p === 'idle') prepareGame();
+                if (g.current.phase === 'dead') prepareGame();
+                else if (g.current.phase === 'idle') prepareGame();
             }
         };
         const up = (e: KeyboardEvent) => {
             const key = e.key.toLowerCase();
             if (key === 'arrowleft' || key === 'a') g.current.moveLeft = false;
             if (key === 'arrowright' || key === 'd') g.current.moveRight = false;
-            if (key === 'arrowup' || key === 'w') g.current.moveUp = false;
         };
         window.addEventListener('keydown', dn);
         window.addEventListener('keyup', up);
         return () => { window.removeEventListener('keydown', dn); window.removeEventListener('keyup', up); };
-    }, [startGame, retryLevel]);
+    }, [prepareGame]);
 
     useEffect(() => { draw(); }, [draw]);
-    useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
-
-    const totalSecs = (levelTime / 1000).toFixed(2);
 
     return (
         <div style={{ maxWidth: 980, margin: '0 auto', padding: '1rem' }}>
-            {/* ─── GAME CARD */}
-            <div style={{
-                background: 'white', borderRadius: 24, padding: '2rem',
-                boxShadow: '0 20px 60px rgba(0,0,0,0.07)', border: '1px solid #f1f5f9'
-            }}>
-                {/* Header */}
-                <div style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem',
-                    padding: '0 0.5rem'
-                }}>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <h2 style={{ fontSize: '1.8rem', fontWeight: 900, color: '#0f172a', margin: '0 0 6px', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span style={{ fontSize: '2rem' }}>⬛</span> CUBEATHON
-                        </h2>
-
-                        <p style={{ margin: 0, color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                            SPEED RUN · TIME TRIAL
-                        </p>
+            <div style={{ background: 'white', borderRadius: 24, padding: '2rem', boxShadow: '0 20px 60px rgba(0,0,0,0.07)', border: '1px solid #f1f5f9' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
+                    <div>
+                        <h2 style={{ fontSize: '1.8rem', fontWeight: 900, color: '#0f172a', margin: 0 }}>⬛ CUBEATHON</h2>
+                        <p style={{ margin: 0, color: '#64748b', fontSize: '0.75rem', fontWeight: 600 }}>SPEED RUN · TIME TRIAL</p>
                     </div>
-
                     <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => setShowLeaderboard(v => !v)} style={{
-                            background: '#0f172a', color: 'white', border: 'none',
-                            padding: '0.6rem 1.4rem', borderRadius: 12, fontWeight: 700,
-                            fontSize: '0.75rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,23,42,0.2)'
-                        }}>🏆 GLOBAL RANKINGS</button>
-                        <button onClick={onBack} style={{
-                            background: '#f1f5f9', color: '#475569', border: 'none',
-                            padding: '0.6rem 1.2rem', borderRadius: 12, fontWeight: 700,
-                            fontSize: '0.75rem', cursor: 'pointer'
-                        }}>← EXIT</button>
+                        <button onClick={() => setShowLeaderboard(true)} style={{ background: '#0f172a', color: 'white', border: 'none', padding: '0.6rem 1.4rem', borderRadius: 12, fontWeight: 700, cursor: 'pointer' }}>🏆 RANKINGS</button>
+                        <button onClick={onBack} style={{ background: '#f1f5f9', color: '#475569', border: 'none', padding: '0.6rem 1.2rem', borderRadius: 12, fontWeight: 700, cursor: 'pointer' }}>← EXIT</button>
                     </div>
                 </div>
 
-                {/* Key hints removed for cleaner UI */}
-
-                {/* Canvas */}
                 <div style={{ position: 'relative', borderRadius: 18, overflow: 'hidden' }}>
-                    <canvas
-                        ref={canvasRef}
-                        width={CANVAS_W}
-                        height={CANVAS_H}
-                        style={{ display: 'block', width: '100%', background: '#0f172a', borderRadius: 18 }}
-                    />
+                    <canvas ref={canvasRef} width={CANVAS_W} height={CANVAS_H} style={{ display: 'block', width: '100%', background: '#0f172a' }} />
 
-                    {/* IDLE overlay */}
                     {phase === 'idle' && (
-                        <div style={{
-                            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center',
-                            background: 'rgba(2,6,23,0.88)', borderRadius: 18
-                        }}>
-                            <div style={{ fontSize: '5rem', marginBottom: 8 }}>⬛</div>
-                            <h3 style={{ color: '#22d3ee', fontSize: '2rem', fontWeight: 900, margin: '0 0 4px', letterSpacing: '0.06em' }}>
-                                CUBEATHON
-                            </h3>
-                            <p style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 700, marginBottom: 28, textAlign: 'center', lineHeight: 1.9, maxWidth: 300 }}>
-                                Navigate your cube through neon obstacles.<br />
-                                Use <strong style={{ color: '#22d3ee' }}>A / D</strong> to steer through the gaps.<br />
-                                <strong style={{ color: '#fca5a5' }}>Don't touch the red walls or go out of bounds!</strong><br />
-                            </p>
-                            <button onClick={prepareGame} style={{
-                                background: 'linear-gradient(135deg,#06b6d4,#0891b2)',
-                                color: 'white', border: 'none', padding: '14px 52px',
-                                borderRadius: 16, fontWeight: 900, fontSize: '1.05rem',
-                                cursor: 'pointer', letterSpacing: '0.08em',
-                                boxShadow: '0 12px 32px rgba(6,182,212,0.45)'
-                            }}>
-                                ▶  START RUN
-                            </button>
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(2,6,23,0.88)' }}>
+                            <div style={{ fontSize: '4rem', marginBottom: 8 }}>⬛</div>
+                            <h3 style={{ color: '#22d3ee', fontSize: '1.8rem', fontWeight: 900 }}>CUBEATHON</h3>
+                            <button onClick={prepareGame} style={{ background: 'linear-gradient(135deg,#06b6d4,#0891b2)', color: 'white', border: 'none', padding: '14px 40px', borderRadius: 16, fontWeight: 900, cursor: 'pointer', marginTop: 20 }}>▶ START RUN</button>
                         </div>
                     )}
 
-                    {/* PICKING overlay */}
                     {phase === 'picking' && (
-                        <div style={{
-                            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center',
-                            background: 'rgba(2,10,34,0.92)', backdropFilter: 'blur(8px)', borderRadius: 18,
-                            padding: '2rem'
-                        }}>
-                            <h3 style={{ color: 'white', fontSize: '1.8rem', fontWeight: 900, marginBottom: '2rem', letterSpacing: '0.05em' }}>
-                                SELECT SPEED
-                            </h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', maxWidth: 280 }}>
-                                <button onClick={() => startGame('easy')} style={{
-                                    background: 'linear-gradient(135deg,#10b981,#059669)',
-                                    color: 'white', border: 'none', padding: '16px', borderRadius: 14,
-                                    fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer', transition: 'transform 0.2s'
-                                }}>
-                                    EASY MODE
-                                </button>
-                                <button onClick={() => startGame('normal')} style={{
-                                    background: 'linear-gradient(135deg,#3b82f6,#2563eb)',
-                                    color: 'white', border: 'none', padding: '16px', borderRadius: 14,
-                                    fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer', transition: 'transform 0.2s'
-                                }}>
-                                    MEDIUM MODE
-                                </button>
-                                <button onClick={() => startGame('hard')} style={{
-                                    background: 'linear-gradient(135deg,#ef4444,#dc2626)',
-                                    color: 'white', border: 'none', padding: '16px', borderRadius: 14,
-                                    fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer', transition: 'transform 0.2s'
-                                }}>
-                                    HIGH SPEED MODE
-                                </button>
-
-                                <button onClick={() => setPhase('idle')} style={{
-                                    background: 'transparent', color: '#94a3b8', border: '1px solid #334155',
-                                    padding: '10px', borderRadius: 12, fontWeight: 700, fontSize: '0.75rem', marginTop: 12, cursor: 'pointer'
-                                }}>
-                                    ← BACK
-                                </button>
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(2,10,34,0.92)' }}>
+                            <h3 style={{ color: 'white', marginBottom: '2rem' }}>SELECT DIFFICULTY</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: 240 }}>
+                                <button onClick={() => startGame('easy')} style={{ background: '#10b981', color: 'white', padding: 14, borderRadius: 12, border: 'none', fontWeight: 800 }}>EASY</button>
+                                <button onClick={() => startGame('normal')} style={{ background: '#3b82f6', color: 'white', padding: 14, borderRadius: 12, border: 'none', fontWeight: 800 }}>NORMAL</button>
+                                <button onClick={() => startGame('hard')} style={{ background: '#ef4444', color: 'white', padding: 14, borderRadius: 12, border: 'none', fontWeight: 800 }}>HARD</button>
                             </div>
                         </div>
                     )}
 
-                    {/* DONE / WIN overlay */}
                     {phase === 'done' && (
-                        <div style={{
-                            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center',
-                            background: 'rgba(2,16,10,0.92)', backdropFilter: 'blur(12px)', borderRadius: 18,
-                            animation: 'celebrateIn 0.5s ease-out'
-                        }}>
-                            <div style={{ fontSize: '5rem', marginBottom: 12, filter: 'drop-shadow(0 0 20px #4ade80)' }}>🏆</div>
-                            <h3 style={{
-                                color: '#4ade80', fontSize: '3rem', fontWeight: 900, margin: '0 0 8px',
-                                letterSpacing: '0.1em', textShadow: '0 0 30px rgba(74,222,128,0.6)'
-                            }}>MISSION ACCOMPLISHED</h3>
-                            <div style={{
-                                background: 'rgba(74,222,128,0.1)', padding: '16px 32px', borderRadius: 20,
-                                border: '1px solid rgba(74,222,128,0.3)', marginBottom: 32, textAlign: 'center'
-                            }}>
-                                <p style={{ color: '#bbf7d0', fontWeight: 800, margin: 0, fontSize: '1.4rem' }}>
-                                    {(g.current.levelTime / 1000).toFixed(2)}s FINISH TIME
-                                </p>
-                                <p style={{ color: '#4ade80', fontWeight: 700, margin: '6px 0 0', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                                    GOAL REACHED · 100% SURVIVAL
-                                </p>
-                            </div>
-                            <div style={{ display: 'flex', gap: 16 }}>
-                                <button onClick={prepareGame} style={{
-                                    background: 'linear-gradient(135deg, #4ade80, #16a34a)', color: 'white', border: 'none',
-                                    padding: '16px 48px', borderRadius: 16, fontWeight: 900,
-                                    fontSize: '1.2rem', cursor: 'pointer',
-                                    boxShadow: '0 12px 30px rgba(74,222,128,0.4)',
-                                    letterSpacing: '0.05em'
-                                }}>PLAY AGAIN</button>
-                                <button onClick={() => { g.current.phase = 'idle'; setPhase('idle'); }} style={{
-                                    background: '#1e293b', color: '#94a3b8', border: 'none',
-                                    padding: '16px 32px', borderRadius: 16, fontWeight: 800, cursor: 'pointer'
-                                }}>Main Menu</button>
-                            </div>
-                            <div style={{ marginTop: 24, display: 'flex', gap: 10 }}>
-                                <span style={{ color: '#4ade80', fontSize: '1.5rem', animation: 'bounce 2s infinite' }}>⭐</span>
-                                <span style={{ color: '#4ade80', fontSize: '1.5rem', animation: 'bounce 2s infinite 0.2s' }}>⭐</span>
-                                <span style={{ color: '#4ade80', fontSize: '1.5rem', animation: 'bounce 2s infinite 0.4s' }}>⭐</span>
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(2,16,10,0.92)' }}>
+                            <h3 style={{ color: '#4ade80', fontSize: '2.5rem', fontWeight: 900 }}>FINISHED!</h3>
+                            <p style={{ color: 'white', fontSize: '1.5rem' }}>{(levelTime / 1000).toFixed(2)}s</p>
+                            <div style={{ marginTop: 20, display: 'flex', gap: 12 }}>
+                                {!finalized ? (
+                                    <button onClick={handleFinalize} disabled={finishing} style={{ background: '#fbbf24', padding: '14px 40px', borderRadius: 12, fontWeight: 900 }}>{finishing ? '...' : 'FINALIZE 🏛️'}</button>
+                                ) : (
+                                    <button onClick={prepareGame} style={{ background: '#4ade80', padding: '14px 40px', borderRadius: 12, fontWeight: 900 }}>RETRY</button>
+                                )}
+                                <button onClick={() => setPhase('idle')} style={{ background: '#1e293b', color: 'white', padding: '14px 30px', borderRadius: 12 }}>MENU</button>
                             </div>
                         </div>
                     )}
 
-                    {/* DEAD overlay */}
                     {phase === 'dead' && (
-                        <div style={{
-                            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center',
-                            background: 'rgba(15,0,0,0.82)', backdropFilter: 'blur(10px)', borderRadius: 18
-                        }}>
-                            <div style={{ fontSize: '4.5rem', marginBottom: 12 }}>💥</div>
-                            <h3 style={{ color: '#f87171', fontSize: '2.4rem', fontWeight: 900, margin: '0 0 8px', letterSpacing: '-0.02em' }}>CRASHED!</h3>
-                            <div style={{
-                                background: 'rgba(239,68,68,0.15)', padding: '12px 24px', borderRadius: 16,
-                                border: '1px solid rgba(239,68,68,0.3)', marginBottom: 28, textAlign: 'center'
-                            }}>
-                                <p style={{ color: '#fca5a5', fontWeight: 800, margin: 0, fontSize: '1.2rem' }}>
-                                    {(g.current.levelTime / 1000).toFixed(2)}s SURVIVED
-                                </p>
-                                <p style={{ color: '#ef4444', fontWeight: 700, margin: '4px 0 0', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                                    DISTANCE: {(g.current.cameraY / 100).toFixed(0)}m
-                                </p>
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,0,0,0.85)' }}>
+                            <h3 style={{ color: '#ef4444', fontSize: '2.5rem' }}>CRASHED</h3>
+                            <p style={{ color: 'white' }}>DISTANCE: {(g.current.cameraY / 100).toFixed(0)}m</p>
+                            <div style={{ marginTop: 20, display: 'flex', gap: 12 }}>
+                                <button onClick={prepareGame} style={{ background: '#ef4444', color: 'white', padding: '14px 40px', borderRadius: 12 }}>RETRY</button>
+                                <button onClick={() => setPhase('idle')} style={{ background: '#1e293b', color: 'white', padding: '14px 30px', borderRadius: 12 }}>MENU</button>
                             </div>
-                            <div style={{ display: 'flex', gap: 12 }}>
-                                <button onClick={retryLevel} style={{
-                                    background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: 'white', border: 'none',
-                                    padding: '14px 40px', borderRadius: 16, fontWeight: 900,
-                                    fontSize: '1.1rem', cursor: 'pointer',
-                                    boxShadow: '0 10px 25px rgba(239,68,68,0.4)'
-                                }}>RETRY RUN</button>
-                                <button onClick={() => { g.current.phase = 'idle'; setPhase('idle'); }} style={{
-                                    background: '#1e293b', color: '#94a3b8', border: 'none',
-                                    padding: '14px 30px', borderRadius: 16, fontWeight: 800, cursor: 'pointer'
-                                }}>Menu</button>
-                            </div>
-                            <p style={{ color: '#6366f1', fontSize: '0.75rem', fontWeight: 700, marginTop: 24, letterSpacing: '0.05em' }}>
-                                SPACEBAR = QUICK RETRY
-                            </p>
                         </div>
                     )}
                 </div>
 
-                {/* ─── ZK PROOF PANEL ─── */}
-                {zkProof && (phase === 'dead' || phase === 'done') && (
-                    <div style={{
-                        marginTop: '1rem',
-                        background: 'linear-gradient(135deg, #0f172a, #1e1b4b)',
-                        border: '1px solid rgba(99,102,241,0.4)',
-                        borderRadius: 16, padding: '1rem 1.25rem',
-                        boxShadow: '0 4px 24px rgba(99,102,241,0.2)'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                            <span style={{
-                                width: 8, height: 8, borderRadius: '50%',
-                                background: isOnChain ? '#4ade80' : '#f59e0b',
-                                boxShadow: `0 0 10px ${isOnChain ? '#4ade80' : '#f59e0b'}`,
-                                flexShrink: 0
-                            }} />
-                            <span style={{ color: '#a5b4fc', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                                🔐 ZK PROOF COMMITMENT {isOnChain ? '· SUBMITTED ON-CHAIN ✓' : '· PRACTICE MODE'}
-                            </span>
-                        </div>
-                        <div style={{
-                            fontFamily: 'monospace', fontSize: '0.65rem', color: '#818cf8',
-                            wordBreak: 'break-all', letterSpacing: '0.05em',
-                            background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: 8
-                        }}>
-                            0x{zkProof.hash}
-                        </div>
-                        <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
-                            <span style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase' }}>
-                                SURVIVAL: {(zkProof.timeMs / 1000).toFixed(2)}s
-                            </span>
-                            <span style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 700, fontFamily: 'monospace' }}>
-                                journal_hash = SHA256(session_id ‖ player ‖ time_ms)
-                            </span>
-                        </div>
+                {zkProof && (
+                    <div style={{ marginTop: 20, padding: 16, background: '#0f172a', borderRadius: 16, color: '#818cf8', fontSize: '0.7rem' }}>
+                        <p style={{ margin: 0 }}>🔐 ZK COMMITMENT: 0x{zkProof.hash}</p>
                     </div>
                 )}
-
-                {/* Footer */}
-                <div style={{
-                    marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid #f1f5f9',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em'
-                }}>
-                    <span style={{ display: 'flex', alignItems: 'center' }}>
-                        <span style={{
-                            width: 6, height: 6, background: '#10b981', borderRadius: '50%',
-                            marginRight: 8, boxShadow: '0 0 10px #10b981'
-                        }} />
-                        ZK VERIFIER ACTIVE · STELLAR TESTNET
-                    </span>
-                    <span>© 2026 STELLAR GAME STUDIO</span>
-                </div>
             </div>
 
-            {/* ─── LEADERBOARD MODAL ─── */}
-            {
-                showLeaderboard && (
-                    <CubeathonLeaderboard
-                        sessionId={sessionId}
-                        player1={player1}
-                        player2={player2}
-                        onClose={() => setShowLeaderboard(false)}
-                    />
-                )
-            }
-        </div >
+            {showLeaderboard && (
+                <CubeathonLeaderboard
+                    sessionId={sessionId} player1={player1} player2={player2}
+                    onClose={() => setShowLeaderboard(false)}
+                />
+            )}
+        </div>
     );
 }
-
-const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;

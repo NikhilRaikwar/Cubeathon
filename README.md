@@ -15,7 +15,7 @@ In traditional speed-runs, validity depends on video proof or trust in a central
 - **Verification**: The smart contract only accepts a record if the ZK proof confirms the player navigated through the obstacles without collisions according to the specific seed of that session.
 
 ### 2. Deployed On-Chain Architecture
-- **Contract Address**: `CBPDASXZ7W6PO4OUH4HHMC7K7UTN3QHOWSNRYVITBG3ZKCH5LNK5L63M` (Stellar Testnet)
+- **Cubeathon Contract**: `CBXR6SP6J6PESI5TXAMPRFDPRJHBGNWMI5DY6M23GFBMJIMI3U6TI3MD` (Stellar Testnet)
 - **Game Hub Integration**: Fully integrated with the mandatory **Stellar Game Hub** (`CB4VZAT2U3UC6XFK3N23SKRF2NDCMP3QHJYMCHHFMZO7MRQO6DQ2EMYG`).
 - **Global Leaderboard**: A decentralized Hall of Fame that only tracks ZK-verified survival times.
 
