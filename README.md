@@ -1,68 +1,85 @@
-# ⬛ Cubeathon — ZK Speed Run on Stellar
+# ⬛ Cubeathon — ZK-Powered Speed Run on Stellar
 
-**Cubeathon** is an elite, cheat-proof speed-run game where players prove their skill using Zero-Knowledge proofs. Built for the **Stellar ZK Gaming Hackathon 2026**, it combines high-intensity cyber-neon aesthetics with verifiable on-chain outcomes.
+**Cubeathon** is a high-intensity, cyber-neon racing prototype built for the **Stellar ZK Gaming Hackathon 2026**. It leverages Zero-Knowledge Proofs (ZKP) and Soroban smart contracts to create a "Fair by Design" competitive environment where speed is verified and cheating is mathematically impossible.
 
-[![ZK Powered](https://img.shields.io/badge/ZK-Powered-cyan.svg)](#) [![Noir ZK](https://img.shields.io/badge/Noir-ZK--Proofs-blue.svg)](#) [![Soroban](https://img.shields.io/badge/Powered%20By-Soroban-purple.svg)](#) [![ZK Native](https://img.shields.io/badge/ZK%20Native-Provable%20Outcomes-orange.svg)](#)
-
----
-
-## 🏆 Hackathon Submission Highlights
-
-### 1. ZK-Native Mechanic: "Provable Maneuverability"
-In traditional speed-runs, validity depends on video proof or trust in a central server. Cubeathon introduces **Provable Survival**:
-- **The Core**: A Noir-based ZK Circuit (`/zk/cubeathon_circuit`) validates the player's movement trajectory.
-- **Dynamic Seeding**: Every race generates a unique track layout from a random on-chain seed. Memoriation is impossible.
-- **Verification**: The smart contract only accepts a record if the ZK proof confirms the player navigated through the obstacles without collisions according to the specific seed of that session.
-
-### 2. Deployed On-Chain Architecture
-- **Cubeathon Contract**: `CBXR6SP6J6PESI5TXAMPRFDPRJHBGNWMI5DY6M23GFBMJIMI3U6TI3MD` (Stellar Testnet)
-- **Game Hub Integration**: Fully integrated with the mandatory **Stellar Game Hub** (`CB4VZAT2U3UC6XFK3N23SKRF2NDCMP3QHJYMCHHFMZO7MRQO6DQ2EMYG`).
-- **Global Leaderboard**: A decentralized Hall of Fame that only tracks ZK-verified survival times.
-
-### 3. Build Security & Transparency
-- **SEP-0055 Compliance**: Implements cryptographic linkage between source code and the WASM binary via GitHub Workflows.
-- **Verifiable Provenance**: Check `.github/workflows/release.yml` for the automated build and attestation pipeline.
+[![ZK Powered](https://img.shields.io/badge/ZK-Powered-cyan.svg)](#) [![Noir ZK](https://img.shields.io/badge/Noir-ZK--Proofs-blue.svg)](#) [![Soroban](https://img.shields.io/badge/Powered%20By-Soroban-purple.svg)](#) [![Stellar Testnet](https://img.shields.io/badge/Network-Testnet-green.svg)](#)
 
 ---
 
-## ⚡ Powered by Stellar Game Studio
-
-**Cubeathon** is built upon the **[Stellar Game Studio (SGS)](https://jamesbachini.github.io/Stellar-Game-Studio/)** toolchain. SGS simplifies building onchain games and streamlines the Stellar game lifecycle, providing a fast starting point for shipping playable web games with robust onchain components.
-
-By pairing Soroban smart contracts with a modern frontend workflow, SGS reduced our boilerplate and allowed us to focus entirely on the high-intensity gameplay and ZK security logic. Our integration with SGS satisfies the hackathon requirements and leveraging its two-player game simulation was pivotal for our development.
-
-- **SGS Documentation**: [jamesbachini.github.io/Stellar-Game-Studio/](https://jamesbachini.github.io/Stellar-Game-Studio/)
-- **SGS Repository**: [github.com/jamesbachini/Stellar-Game-Studio](https://github.com/jamesbachini/Stellar-Game-Studio)
+## 📽️ Video Demonstration
+> **[Watch the Cubeathon Demo on YouTube](https://youtube.com/link-to-your-video)**  
+> *This video covers gameplay, the ZK generation process, and the on-chain finalization flow.*
 
 ---
 
-## 🛠️ The Technology
-- **ZK Circuit**: Noir Lang (Poseidon Hashing for identity/seed commitment).
-- **Smart Contracts**: Soroban (Rust SDK).
-- **Frontend**: React + Vite + Vanilla CSS.
-- **Aesthetic**: High-Intensity landscape 3D projection, Cyber-Neon theme.
+## 💎 The ZK Core: "Provable Maneuverability"
+
+In most web games, leaderboard data is easily manipulated by intercepting API calls or modifying client-side memory. In **Cubeathon**, your score doesn't exist until you prove it.
+
+### How it works:
+1.  **Unique Session Seed**: Every match starts with an on-chain seed that procedurally generates a unique 1.5km obstacle course.
+2.  **Verifiable Execution**: As you race, your movement journal is tracked. Upon crossing the finish line, the game generates a **ZK Proof (via Noir)**.
+3.  **On-Chain Verification**: The Soroban smart contract acts as the ultimate referee. It takes the proof, your time, and the session ID. It re-verifies that your path safely navigated the obstacles derived from that session's seed.
+4.  **No ZK, No Entry**: If you collided with a block (even if you "hacked" the client to ignore it), the ZK proof will fail, and the contract will reject your leaderboard entry.
 
 ---
 
-## 🏁 How to Play
+## 🔗 On-Chain Architecture (Stellar Testnet)
 
-1.  **Connect**: Switch between Dev Identities (Player 1 / Player 2) to simulate the competitive environment.
-2.  **Start**: Initialize a session which calls the global **Game Hub** contract to record the start.
-3.  **Race**: Control your cyan cube with `A/D` or `Arrow Keys`. 
-4.  **Navigate**: Dodge the red emissive obstacle clusters. Remember, obstacles cover 80% of the road—speed and precision are mandatory!
-5.  **Finish**: Cross the 1500m finish line at maximum velocity.
-6.  **Verify**: Submit your ZK Proof to finalize your standing on the **Winning Leaderboard**.
+Our deployment follows the strict hackathon requirements for Game Hub integration:
 
----
+-   **Cubeathon Game Contract**: `CDWMVCILTY3O3VMT4NWYJ266GJNH6FAXWGLNIZM2SJSIHQIBTSJXYDPJ`
+-   **Mandatory Game Hub**: `CB4VZAT2U3UC6XFK3N23SKRF2NDCMP3QHJYMCHHFMZO7MRQO6DQ2EMYG`
+-   **ZK Verifier Contract**: `CDO6JBSEUUOO5QQENIZCH3AT2K3T4ZEU724K2GJGOP77TZ3PZCCUXGNW`
 
-## � Game Logic & Fairness
-
-### No Memoriation, Just Skill
-The game avoids the "fixed track" pitfall. Because the seed is randomized every attempt, every race is a new puzzle. You can't learn the pattern; you have to have the reflexes.
-
-### Provable Outcomes
-Bypassing the client-side logic via standard hacks (like disabling collision detection) will result in a failed ZK Proof on-chain, as the circuit re-simulates the track from the seed and finds the collision.
+### Lifecycle Integration:
+-   **`start_game()`**: Called when a new race session is initiated.
+-   **`end_game()`**: Triggered during the "Finalize Match" step after a successful ZK-verified finish. This ensures the Game Hub is aware of every match outcome.
 
 ---
 
-Built with ❤️ for the **Stellar ZK Gaming Hackathon 2026**.
+## 🛠️ The Tech Stack
+
+| Layer | Technology |
+| :--- | :--- |
+| **Logic** | Soroban Smart Contracts (Rust) |
+| **ZK Circuit** | Noir Lang (Verifiable Computation) |
+| **Frontend** | React 18 + Vite |
+| **Styling** | Cyber-Neon Vanilla CSS |
+| **Network** | Stellar Testnet (Protocol 25) |
+| **Toolchain** | Stellar Game Studio (SGS) |
+
+---
+
+## 🚀 Installation & Local Development
+
+To run the frontend locally and connect your wallet:
+
+```bash
+# Clone the repository
+git clone https://github.com/NikhilRaikwar/Cubeathon.git
+cd Cubeathon/frontend
+
+# Install dependencies
+bun install
+
+# Start development server
+bun run dev
+```
+
+### Environment Setup
+Create a `.env` file in the `frontend` directory:
+```text
+VITE_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+VITE_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
+VITE_CUBEATHON_CONTRACT_ID=CDWMVCILTY3O3VMT4NWYJ266GJNH6FAXWGLNIZM2SJSIHQIBTSJXYDPJ
+```
+
+---
+
+## ⚖️ License
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+Built with ❤️ by **Nikhil Raikwar** for the Stellar ZK Gaming Hackathon 2026.
