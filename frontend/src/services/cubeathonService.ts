@@ -366,7 +366,10 @@ export class CubeathonService {
             TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE)
         );
         if (resp.status === "ERROR") {
-            throw new Error(`Tx error: ${(resp as any).errorResult?.toXDR?.() ?? "unknown"}`);
+            console.error("[Cubeathon] sendTransaction ERROR:", resp);
+            const errXdr = (resp as any).errorResultXdr || (resp as any).errorResult?.toXDR?.();
+            if (errXdr) console.error("[Cubeathon] errorResultXdr:", errXdr);
+            throw new Error(`Tx error: ${errXdr || "unknown status: ERROR. Check console."}`);
         }
         let finalResp: any = resp;
         let retries = 0;
