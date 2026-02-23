@@ -62,6 +62,16 @@ Our deployment follows the strict hackathon requirements for Game Hub integratio
 
 ---
 
+## 🛠️ Built with Stellar Game Studio
+**Cubeathon** leverages the **Stellar Game Studio** framework to simplify the on-chain game lifecycle. 
+
+Stellar Game Studio provides a robust foundation for building web games with Soroban components. By using this "Dev Shortcut," we were able to reduce boilerplate code and concentrate on the core ZK mechanics and cyber-neon aesthetics. It streamlines the transition from local development to a deployed prototype, ensuring convention over configuration.
+
+- **Explore Stellar Game Studio**: [jamesbachini.github.io/Stellar-Game-Studio](https://jamesbachini.github.io/Stellar-Game-Studio/)
+- **SGS Repository**: [github.com/jamesbachini/Stellar-Game-Studio](https://github.com/jamesbachini/Stellar-Game-Studio)
+
+---
+
 ## 🛠️ The Tech Stack
 
 | Layer | Technology |
