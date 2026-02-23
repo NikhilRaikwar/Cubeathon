@@ -289,60 +289,61 @@ export class CubeathonService {
             nativeToScVal(player2Points, { type: "i128" }),
         ];
 
-        const { tx, sim, server: s } = await buildAndSimulate("start_game", args, player2);
-        const auth: xdr.SorobanAuthorizationEntry[] = (sim as any).result?.auth ?? [];
-
-        const p1Signed = xdr.SorobanAuthorizationEntry.fromXDR(player1AuthXDR, "base64");
-        const p1Addr = Address.fromScAddress(
-            p1Signed.credentials().address().address()
-        ).toString();
-
-        const validUntil = await calculateValidUntilLedger(RPC_URL, DEFAULT_AUTH_TTL_MINUTES);
-
-        for (let i = 0; i < auth.length; i++) {
-            try {
-                if (auth[i].credentials().switch().name !== "sorobanCredentialsAddress") continue;
-                const addr = Address.fromScAddress(auth[i].credentials().address().address()).toString();
-                if (addr === p1Addr) { auth[i] = p1Signed; continue; }
-                if (addr === player2 && player2Signer.signAuthEntry) {
-                    auth[i] = await authorizeEntry(
-                        auth[i],
-                        async (preimage) => {
-                            const res = await player2Signer.signAuthEntry!(preimage.toXDR("base64"), {
-                                networkPassphrase: NETWORK_PASSPHRASE,
-                                address: player2,
-                            });
-                            if (res.error) throw new Error(res.error.message);
-                            return Buffer.from(res.signedAuthEntry, "base64");
-                        },
-                        validUntil,
-                        NETWORK_PASSPHRASE,
-                    );
-                }
-            } catch { continue; }
-        }
-
-        // Re-assemble with both signed auth entries
+        const s = makeServer();
         const account = await s.getAccount(player2);
         const contract = new Contract(CUBEATHON_CONTRACT_ID);
 
-        // Update the simulation result with BOTH signed authorizations
-        // This ensures the footprint builder sees both signatures are required
-        const simWithAuths = {
-            ...sim,
-            result: {
-                ...(sim as any).result,
-                auth
-            }
-        };
-
-        const freshTx = new TransactionBuilder(account, {
-            fee: "50000", // High fee for hackathon reliability
+        // 1. Build the base transaction
+        const baseTx = new TransactionBuilder(account, {
+            fee: "100000",
             networkPassphrase: NETWORK_PASSPHRASE,
         }).addOperation(contract.call("start_game", ...args)).setTimeout(30).build();
 
-        const assembled = StellarRpc.assembleTransaction(freshTx, simWithAuths as any).build();
+        // 2. Initial simulation to get the placeholders
+        let sim = await s.simulateTransaction(baseTx);
+        if (StellarRpc.Api.isSimulationError(sim)) {
+            throw new Error(`Simulation error: ${sim.error}`);
+        }
 
+        const auth: xdr.SorobanAuthorizationEntry[] = (sim as any).result?.auth ?? [];
+        const p1Signed = xdr.SorobanAuthorizationEntry.fromXDR(player1AuthXDR, "base64");
+        const p1AddrKey = Address.fromScAddress(p1Signed.credentials().address().address()).toString();
+        const validUntil = await calculateValidUntilLedger(RPC_URL, DEFAULT_AUTH_TTL_MINUTES);
+
+        // 3. Populate auth entries with signatures
+        for (let i = 0; i < auth.length; i++) {
+            const addr = Address.fromScAddress(auth[i].credentials().address().address()).toString();
+            if (addr === p1AddrKey) {
+                auth[i] = p1Signed;
+            } else if (addr === player2) {
+                auth[i] = await authorizeEntry(
+                    auth[i],
+                    async (preimage) => {
+                        const res = await player2Signer.signAuthEntry!(preimage.toXDR("base64"), {
+                            networkPassphrase: NETWORK_PASSPHRASE,
+                            address: player2,
+                        });
+                        if (res.error) throw new Error(res.error.message);
+                        return Buffer.from(res.signedAuthEntry, "base64");
+                    },
+                    validUntil,
+                    NETWORK_PASSPHRASE,
+                );
+            }
+        }
+
+        // 4. Update the transaction with BOTH signed auth entries
+        // This is the key: some SDKs need the auth in the TX before final assembly/simulation
+        (baseTx.operations[0] as any).auth = auth;
+
+        // 5. Final simulation with REAL auth to get the PERFECT footprint
+        const finalSim = await s.simulateTransaction(baseTx);
+        if (StellarRpc.Api.isSimulationError(finalSim)) {
+            throw new Error(`Final simulation failed: ${finalSim.error}`);
+        }
+
+        // 6. Assemble and Sign
+        const assembled = StellarRpc.assembleTransaction(baseTx, finalSim).build();
         if (!player2Signer.signTransaction) throw new Error("signTransaction not available");
         const { signedTxXdr, error } = await player2Signer.signTransaction(
             assembled.toXDR(),
