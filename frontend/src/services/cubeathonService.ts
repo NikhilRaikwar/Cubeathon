@@ -373,14 +373,20 @@ export class CubeathonService {
 
         if (finalResp.status !== "SUCCESS") {
             console.error(`[Cubeathon] Transaction FAILED. Status: ${finalResp.status}`, finalResp);
-            const detail = finalResp.resultMetaXdr || finalResp.resultXdr || finalResp.errorResultXdr;
-            if (detail) console.error(`[Cubeathon] Failure XDR: ${detail}`);
 
-            // Try to find diagnostic events in the meta if available
-            if (finalResp.resultMetaXdr) {
-                console.warn("[Cubeathon] Suggestion: Decode Failure XDR at https://lab.stellar.org/#xdr-viewer?type=TransactionMeta&network=testnet");
-            }
-            throw new Error(`Session initialization failed with status: ${finalResp.status}. Check console for XDR detail.`);
+            // Extract XDR string even if it's wrapped in an object
+            const getXdr = (val: any) => (typeof val === 'string' ? val : (val?.toXDR ? val.toXDR("base64") : JSON.stringify(val)));
+
+            const meta = finalResp.resultMetaXdr;
+            const res = finalResp.resultXdr;
+            const err = finalResp.errorResultXdr;
+
+            if (meta) console.error(`[Cubeathon] resultMetaXdr:`, getXdr(meta));
+            if (res) console.error(`[Cubeathon] resultXdr:`, getXdr(res));
+            if (err) console.error(`[Cubeathon] errorResultXdr:`, getXdr(err));
+
+            console.warn("[Cubeathon] Suggestion: Copy resultMetaXdr and decode at https://lab.stellar.org/#xdr-viewer?type=TransactionMeta&network=testnet");
+            throw new Error(`Session initialization failed: ${finalResp.status}. See console for XDR.`);
         }
     }
 
