@@ -101,7 +101,6 @@ export default function App() {
   const [page, setPage] = useState<AppPage>('games');
   const [gameActive, setGameActive] = useState(false);
   const [sessionId] = useState(createSessionId);
-  const [difficulty, setDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal');
 
   // Create-mode form state
   const [createMode, setCreateMode] = useState<CreateMode>('create');
@@ -306,7 +305,7 @@ export default function App() {
             player1={activeGame?.player1 ?? player1Address}
             player2={activeGame?.player2 ?? ''}
             availablePoints={activeGame?.player1 === publicKey ? activeGame.player1Points : activeGame?.player2Points ?? 10000000n}
-            difficulty={difficulty}
+            isOnChain={!!activeGame}
             onBack={() => setGameActive(false)}
             onStandingsRefresh={() => { }}
             onGameComplete={(w) => {
@@ -450,27 +449,6 @@ export default function App() {
                 {m === 'create' ? 'Create & Export' : m === 'import' ? 'Import Auth Entry' : 'Load Existing Game'}
               </button>
             ))}
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={lbl}>Select Difficulty</label>
-            <div style={{ display: 'flex', gap: 8, background: '#f8fafc', borderRadius: 12, padding: 4 }}>
-              {(['easy', 'normal', 'hard'] as const).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setDifficulty(d)}
-                  style={{
-                    flex: 1, padding: '8px', borderRadius: 10, fontWeight: 700, fontSize: '.75rem', cursor: 'pointer',
-                    border: 'none',
-                    background: difficulty === d ? (d === 'hard' ? '#ef4444' : d === 'easy' ? '#10b981' : '#3b82f6') : 'transparent',
-                    color: difficulty === d ? 'white' : '#64748b',
-                    transition: 'all .2s ease'
-                  }}
-                >
-                  {d.toUpperCase()}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div style={{ background: 'linear-gradient(135deg,#fefce8,#fef3c7)', border: '2px solid #fde68a', borderRadius: 14, padding: '14px 18px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
