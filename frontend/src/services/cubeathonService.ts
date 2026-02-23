@@ -295,7 +295,7 @@ export class CubeathonService {
 
         // 1. Build the base transaction
         const baseTx = new TransactionBuilder(account, {
-            fee: "100000",
+            fee: "200000",
             networkPassphrase: NETWORK_PASSPHRASE,
         }).addOperation(contract.call("start_game", ...args)).setTimeout(30).build();
 
@@ -308,7 +308,9 @@ export class CubeathonService {
         const auth: xdr.SorobanAuthorizationEntry[] = (sim as any).result?.auth ?? [];
         const p1Signed = xdr.SorobanAuthorizationEntry.fromXDR(player1AuthXDR, "base64");
         const p1AddrKey = Address.fromScAddress(p1Signed.credentials().address().address()).toString();
-        const validUntil = await calculateValidUntilLedger(RPC_URL, DEFAULT_AUTH_TTL_MINUTES);
+
+        // Use a much longer TTL to prevent expiration during network lag
+        const validUntil = await calculateValidUntilLedger(RPC_URL, 30); // 30 mins
 
         // 3. Populate auth entries with signatures
         for (let i = 0; i < auth.length; i++) {
@@ -335,27 +337,27 @@ export class CubeathonService {
             }
         }
 
-        // 4. Update the transaction with BOTH signed auth entries
-        // Refresh account from server to ensure latest sequence number (prevents txBAD_SEQ)
+        // 4. Update the simulation result with BOTH signed authorizations
+        // This is CRITICAL: assembleTransaction uses the sim's result to build the final footprint
+        const simWithAuths = {
+            ...sim,
+            result: {
+                ...(sim as any).result,
+                auth: auth
+            }
+        };
+
+        // 5. Refresh account sequence and ASSEMBLE
         const freshAccount = await s.getAccount(player2);
-
-        const finalOp = contract.call("start_game", ...args);
-        (finalOp as any).auth = auth;
-
         const finalTx = new TransactionBuilder(freshAccount, {
             fee: "200000",
             networkPassphrase: NETWORK_PASSPHRASE,
-        }).addOperation(finalOp).setTimeout(30).build();
+        }).addOperation(contract.call("start_game", ...args)).setTimeout(30).build();
 
-        // 5. Final simulation with REAL auth to get the PERFECT footprint
-        const finalSim = await s.simulateTransaction(finalTx);
-        if (StellarRpc.Api.isSimulationError(finalSim)) {
-            console.error("[Cubeathon] Final simulation failed:", finalSim);
-            throw new Error(`Final simulation failed: ${finalSim.error}`);
-        }
+        // assembleTransaction merges the footprint and auth into the final transaction
+        const assembled = StellarRpc.assembleTransaction(finalTx, simWithAuths as any).build();
 
-        // 6. Assemble and Sign
-        const assembled = StellarRpc.assembleTransaction(finalTx, finalSim).build();
+        // 6. Sign and Submit
         if (!player2Signer.signTransaction) throw new Error("signTransaction not available");
         const { signedTxXdr, error } = await player2Signer.signTransaction(
             assembled.toXDR(),
@@ -367,47 +369,34 @@ export class CubeathonService {
             TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE)
         );
         if (resp.status === "ERROR") {
-            console.error("[Cubeathon] sendTransaction ERROR:", resp);
             let errXdr = (resp as any).errorResultXdr || (resp as any).errorResult?.toXDR?.();
-            // Handle Uint8Array from some RPC responses
-            if (errXdr instanceof Uint8Array) {
-                errXdr = Buffer.from(errXdr).toString("base64");
-            }
-            if (errXdr) console.error("[Cubeathon] errorResultXdr (Base64):", errXdr);
+            if (errXdr instanceof Uint8Array) errXdr = Buffer.from(errXdr).toString("base64");
+            console.error("[Cubeathon] sendTransaction ERROR:", resp, "XDR:", errXdr);
             throw new Error(`Tx error: ${errXdr || "unknown status: ERROR"}`);
         }
+
         let finalResp: any = resp;
         let retries = 0;
-        while (finalResp.status === "PENDING" || (finalResp.status === "NOT_FOUND" && retries < 5)) {
+        while (finalResp.status === "PENDING" || (finalResp.status === "NOT_FOUND" && retries < 15)) {
             await new Promise((r) => setTimeout(r, 2000));
             try {
                 finalResp = await s.getTransaction(resp.hash);
             } catch (err: any) {
                 if (err.message?.includes("NOT_FOUND")) {
                     finalResp = { status: "NOT_FOUND", hash: resp.hash };
-                } else {
-                    throw err;
-                }
+                } else { throw err; }
             }
             if (finalResp.status === "NOT_FOUND") retries++;
         }
 
         if (finalResp.status !== "SUCCESS") {
             console.error(`[Cubeathon] Transaction FAILED. Status: ${finalResp.status}`, finalResp);
-
-            // Extract XDR string even if it's wrapped in an object
-            const getXdr = (val: any) => (typeof val === 'string' ? val : (val?.toXDR ? val.toXDR("base64") : JSON.stringify(val)));
-
             const meta = finalResp.resultMetaXdr;
-            const res = finalResp.resultXdr;
-            const err = finalResp.errorResultXdr;
-
-            if (meta) console.error(`[Cubeathon] resultMetaXdr:`, getXdr(meta));
-            if (res) console.error(`[Cubeathon] resultXdr:`, getXdr(res));
-            if (err) console.error(`[Cubeathon] errorResultXdr:`, getXdr(err));
-
-            console.warn("[Cubeathon] Suggestion: Copy resultMetaXdr and decode at https://lab.stellar.org/#xdr-viewer?type=TransactionMeta&network=testnet");
-            throw new Error(`Session initialization failed: ${finalResp.status}. See console for XDR.`);
+            if (meta) {
+                console.error(`[Cubeathon] Failure resultMetaXdr (Base64):`, meta);
+                console.warn("[Cubeathon] Decode at https://lab.stellar.org/#xdr-viewer?type=TransactionMeta&network=testnet");
+            }
+            throw new Error(`Session initialization failed: ${finalResp.status}`);
         }
     }
 

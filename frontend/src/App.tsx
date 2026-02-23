@@ -235,6 +235,10 @@ export default function App() {
       await ensureFunded(p1Addr);
       await ensureFunded(p2Addr);
 
+      // Artificial delay to ensure RPC indexer is synchronized
+      console.info("[Cubeathon] Accounts ready. Waiting 3s for RPC sync...");
+      await new Promise(r => setTimeout(r, 3000));
+
       const p1XDR = await cubeathonService.prepareStartGame(
         freshSession, p1Addr, p2Addr, points, points, p1Signer
       );
