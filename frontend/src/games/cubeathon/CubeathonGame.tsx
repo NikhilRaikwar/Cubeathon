@@ -26,10 +26,11 @@ const INITIAL_SPEED = 8.0;
 const SPEED_SCALE_RATE = 0.52;
 const SPAWN_DISTANCE = 600;
 const INITIAL_WALLS = 20;
-const TRACK_LENGTH = 15000;
-const FRICTION = 0.85; // Much tighter control
-const STEER_ACCEL = 1.45; // Smooth but firm
-const MAX_STEER_VEL = 22; // Prevent flying off road
+const TRACK_LENGTH = 20000;   // longer run = more addictive
+const FINISH_CLEAR_ZONE = 2500; // no obstacles in last stretch
+const FRICTION = 0.85;
+const STEER_ACCEL = 1.45;
+const MAX_STEER_VEL = 22;
 
 const HORIZON_Y = 120;
 const FOV = 350;
@@ -53,7 +54,6 @@ export interface CubeathonGameProps {
     player1: string;
     player2: string;
     availablePoints: bigint;
-    difficulty: Difficulty;
     onBack: () => void;
     onStandingsRefresh: () => void;
     onGameComplete: (winnerAddr: string) => void;
@@ -63,7 +63,7 @@ export interface CubeathonGameProps {
 // ─────────────────────────────────────────────────────────
 export function CubeathonGame({
     userAddress, sessionId, player1, player2, availablePoints,
-    difficulty, onBack, onStandingsRefresh, onGameComplete
+    onBack, onStandingsRefresh, onGameComplete
 }: CubeathonGameProps) {
     const { getContractSigner } = useWallet();
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -71,10 +71,12 @@ export function CubeathonGame({
 
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
+    const [difficulty, setDifficulty] = useState<Difficulty>('normal');
+    const difficultyRef = useRef<Difficulty>('normal'); // readable inside rAF loop without stale closure
 
     // All mutable game state in a ref
     const g = useRef({
-        phase: 'idle' as 'idle' | 'countdown' | 'playing' | 'dead' | 'done',
+        phase: 'idle' as 'idle' | 'picking' | 'countdown' | 'playing' | 'dead' | 'done',
         cameraY: 0,
         cubeX: (ROAD_W - CUBE_W) / 2,
         cubeVelX: 0,
@@ -217,7 +219,7 @@ export function CubeathonGame({
             }
         }
 
-        // ── Cube (Neon Cyan Player)
+        // ── Cube (Neon Cyan Player) – original square with glow
         const pCube = project(s.cubeX, -s.cameraY + 5);
         if (pCube) {
             const cw = CUBE_W * pCube.scale;
@@ -230,29 +232,41 @@ export function CubeathonGame({
             ctx.shadowBlur = 0;
         }
 
+        // ── Live Timer (drawn on canvas top-right during play)
+        if (s.phase === 'playing' || s.phase === 'countdown') {
+            const elapsed = s.phase === 'playing' ? (performance.now() - s.levelStartTs) : 0;
+            const secs = (elapsed / 1000).toFixed(2);
+            ctx.font = 'bold 22px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillStyle = 'rgba(34,211,238,0.95)';
+            ctx.shadowBlur = 10; ctx.shadowColor = '#22d3ee';
+            ctx.fillText(`⏱ ${secs}s`, CANVAS_W - 20, 36);
+            ctx.shadowBlur = 0;
+            ctx.textAlign = 'left';
+        }
+
         // ── Overlays
         if (s.phase === 'countdown') {
             ctx.fillStyle = 'rgba(0,0,0,0.6)';
             ctx.fillRect(ROAD_LEFT, 0, ROAD_W, CANVAS_H);
             ctx.fillStyle = '#22d3ee'; ctx.font = 'bold 80px monospace'; ctx.textAlign = 'center';
             ctx.fillText(s.countdownN > 0 ? String(s.countdownN) : 'GO!', CANVAS_W / 2, CANVAS_H / 2 + 30);
-
-            ctx.font = 'bold 24px monospace';
-            ctx.fillStyle = difficulty === 'hard' ? '#f87171' : difficulty === 'easy' ? '#10b981' : '#22d3ee';
-            ctx.fillText(difficulty.toUpperCase() + " MODE", CANVAS_W / 2, CANVAS_H / 2 + 100);
-
             ctx.textAlign = 'left';
         }
     }, []);
 
     // ─── GAME LOGIC ────────────────────────────────────────
     const submitFinalScore = useCallback(async (timeMs: number) => {
+        console.warn(
+            `[Cubeathon] submitting score | session:${sessionId} player:${userAddress} time:${timeMs}ms`
+        );
         try {
             const runner = await getContractSigner();
             await cubeathonService.submitScore(sessionId, userAddress, BigInt(Math.floor(timeMs)), runner);
+            console.info('[Cubeathon] score submitted ✓');
             refreshLeaderboard();
         } catch (err) {
-            console.error('Score submission failed:', err);
+            console.error('[Cubeathon] Score submission FAILED:', err);
         }
     }, [getContractSigner, sessionId, userAddress, refreshLeaderboard]);
 
@@ -288,28 +302,42 @@ export function CubeathonGame({
 
         const elapsedS = s.levelTime / 1000;
 
-        // Difficulty-based speed scaling
-        let baseStartSpd = INITIAL_SPEED;
-        let scaleRate = SPEED_SCALE_RATE;
+        // ─── Per-difficulty physics (read from ref so loop never stales) ───
+        const diff = difficultyRef.current;
+        let baseStartSpd: number;
+        let scaleRate: number;
+        let steerAccel: number;
+        let maxSteerVel: number;
 
-        if (difficulty === 'easy') {
-            baseStartSpd = 6.0;
-            scaleRate = 0.35;
-        } else if (difficulty === 'hard') {
-            baseStartSpd = 12.0;
-            scaleRate = 0.85;
+        if (diff === 'easy') {
+            baseStartSpd = 7.0;
+            scaleRate = 0.30;
+            steerAccel = 1.4;
+            maxSteerVel = 18;
+        } else if (diff === 'hard') {
+            // High: 0.5× faster than previous 20 → 28
+            baseStartSpd = 28.0;
+            scaleRate = 1.10;
+            steerAccel = 2.4;
+            maxSteerVel = 34;
+        } else {
+            // Medium: 0.5× faster than previous 12 → 17
+            baseStartSpd = 17.0;
+            scaleRate = 0.70;
+            steerAccel = 1.8;
+            maxSteerVel = 26;
         }
 
         const currentBaseSpd = baseStartSpd + (Math.floor(elapsedS / 10) * scaleRate);
         const spd = currentBaseSpd * dt;
 
-        // Inertia-based steering
-        if (s.moveLeft) s.cubeVelX -= STEER_ACCEL * dt;
-        if (s.moveRight) s.cubeVelX += STEER_ACCEL * dt;
+        // Inertia-based steering (per-difficulty)
+        if (s.moveLeft) s.cubeVelX -= steerAccel * dt;
+        if (s.moveRight) s.cubeVelX += steerAccel * dt;
 
         // Clamp velocity
-        if (s.cubeVelX > MAX_STEER_VEL) s.cubeVelX = MAX_STEER_VEL;
-        if (s.cubeVelX < -MAX_STEER_VEL) s.cubeVelX = -MAX_STEER_VEL;
+        if (s.cubeVelX > maxSteerVel) s.cubeVelX = maxSteerVel;
+        if (s.cubeVelX < -maxSteerVel) s.cubeVelX = -maxSteerVel;
 
         s.cubeVelX *= Math.pow(FRICTION, dt);
         s.cubeX += s.cubeVelX * dt;
@@ -333,23 +361,50 @@ export function CubeathonGame({
             draw(); return;
         }
 
-        // Infinite Spawning Logic (Full Boundary Gates)
+        // Obstacle Spawning – 4 rotating patterns, difficulty-aware gaps & spacing
+        const diff2 = difficultyRef.current;
+        // Easy: wider gaps + closer walls, Medium: medium, High: tight gaps but longer between walls
+        const spawnGap = diff2 === 'easy' ? 180 : diff2 === 'hard' ? 130 : 150;
+        const spawnDist = diff2 === 'easy' ? 550 : diff2 === 'hard' ? 700 : 620;
+
         while (s.lastSpawnY > -s.cameraY - 3000 && s.lastSpawnY > -TRACK_LENGTH + 800) {
-            const newY = s.lastSpawnY - SPAWN_DISTANCE;
+            const newY = s.lastSpawnY - spawnDist;
 
-            // Create a single gap in a wall that touches both boundaries
-            const gapWidth = 180;
-            const gapCenter = 150 + (Math.abs(Math.floor(newY * 1.3) ^ s.rngSeed) % (ROAD_W - 300));
+            // Clear zone before finish line (especially important for High mode)
+            if (-newY >= TRACK_LENGTH - FINISH_CLEAR_ZONE) {
+                s.lastSpawnY = newY;
+                continue;
+            }
 
-            // Left block
-            const leftSize = Math.max(1, Math.floor((gapCenter - gapWidth / 2) / CUBE_W));
-            s.walls.push({ worldY: newY, gapX: 0, size: leftSize });
+            // Rotate between 4 patterns every ~5 walls for addictive variability
+            const wallIdx = Math.floor(Math.abs(newY) / spawnDist);
+            const pattern = wallIdx % 4;
+            const rng = Math.abs(Math.floor(newY * 1.3) ^ s.rngSeed);
+            let gapCenter: number;
 
-            // Right block
-            const rightStart = gapCenter + gapWidth / 2;
-            const rightSize = Math.max(1, Math.floor((ROAD_W - rightStart) / CUBE_W));
-            s.walls.push({ worldY: newY, gapX: rightStart, size: rightSize });
+            if (pattern === 1) {
+                // Zigzag: sharp alternating sides
+                gapCenter = wallIdx % 2 === 0
+                    ? 140 + (rng % Math.floor(ROAD_W / 4))
+                    : ROAD_W - 140 - (rng % Math.floor(ROAD_W / 4));
+            } else if (pattern === 2) {
+                // Tight center: forces player toward middle
+                gapCenter = ROAD_W / 2 + ((rng % 90) - 45);
+            } else if (pattern === 3) {
+                // Wide drift: obstacle cluster drifts across track
+                gapCenter = 200 + (rng % (ROAD_W - 400));
+            } else {
+                // Standard random
+                gapCenter = 150 + (rng % (ROAD_W - 300));
+            }
 
+            gapCenter = Math.max(spawnGap / 2 + 30, Math.min(ROAD_W - spawnGap / 2 - 30, gapCenter));
+
+            const leftSize2 = Math.max(1, Math.floor((gapCenter - spawnGap / 2) / CUBE_W));
+            s.walls.push({ worldY: newY, gapX: 0, size: leftSize2 });
+            const rightStart2 = gapCenter + spawnGap / 2;
+            const rightSize2 = Math.max(1, Math.floor((ROAD_W - rightStart2) / CUBE_W));
+            s.walls.push({ worldY: newY, gapX: rightStart2, size: rightSize2 });
             s.lastSpawnY = newY;
         }
 
@@ -384,7 +439,19 @@ export function CubeathonGame({
         rafRef.current = requestAnimationFrame(gameLoop);
     }, [draw, submitFinalScore]);
 
-    const startGame = useCallback(() => {
+    const prepareGame = useCallback(() => {
+        g.current.phase = 'picking';
+        setPhase('picking');
+    }, []);
+
+    const startGame = useCallback((selectedDifficulty: Difficulty) => {
+        setDifficulty(selectedDifficulty);
+        difficultyRef.current = selectedDifficulty; // sync ref immediately
+
+        // Gap width & spawn spacing per difficulty
+        const gapWidth = selectedDifficulty === 'easy' ? 200 : selectedDifficulty === 'hard' ? 280 : 220;
+        const spawnSpacing = selectedDifficulty === 'easy' ? 550 : selectedDifficulty === 'hard' ? 750 : 620;
+
         const s = g.current;
         s.phase = 'countdown';
         s.countdownN = 3;
@@ -401,8 +468,7 @@ export function CubeathonGame({
 
         // Initial walls sequence
         for (let i = 0; i < INITIAL_WALLS; i++) {
-            const y = -(800 + i * SPAWN_DISTANCE);
-            const gapWidth = 180;
+            const y = -(800 + i * spawnSpacing);
             const gapCenter = 200 + (Math.abs(Math.floor(y * 1.3) ^ s.rngSeed) % (ROAD_W - 400));
             const leftSize = Math.max(1, Math.floor((gapCenter - gapWidth / 2) / CUBE_W));
             s.walls.push({ worldY: y, gapX: 0, size: leftSize });
@@ -417,7 +483,9 @@ export function CubeathonGame({
         rafRef.current = requestAnimationFrame(gameLoop);
     }, [gameLoop]);
 
-    const retryLevel = startGame; // In endless mode, retry is just starting a new game
+    const retryLevel = () => {
+        prepareGame();
+    };
 
     // ─── KEYBOARD ─────────────────────────────────────────
     useEffect(() => {
@@ -429,7 +497,7 @@ export function CubeathonGame({
                 e.preventDefault();
                 const p = g.current.phase;
                 if (p === 'dead') retryLevel();
-                else if (p === 'idle') startGame();
+                else if (p === 'idle') prepareGame();
             }
         };
         const up = (e: KeyboardEvent) => {
@@ -460,10 +528,11 @@ export function CubeathonGame({
                     padding: '0 0.5rem'
                 }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <h2 style={{ fontSize: '1.8rem', fontWeight: 900, color: '#0f172a', margin: 0, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <h2 style={{ fontSize: '1.8rem', fontWeight: 900, color: '#0f172a', margin: '0 0 6px', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 10 }}>
                             <span style={{ fontSize: '2rem' }}>⬛</span> CUBEATHON
                         </h2>
-                        <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+
+                        <p style={{ margin: 0, color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                             SPEED RUN · TIME TRIAL
                         </p>
                     </div>
@@ -509,7 +578,7 @@ export function CubeathonGame({
                                 Use <strong style={{ color: '#22d3ee' }}>A / D</strong> to steer through the gaps.<br />
                                 <strong style={{ color: '#fca5a5' }}>Don't touch the red walls or go out of bounds!</strong><br />
                             </p>
-                            <button onClick={startGame} style={{
+                            <button onClick={prepareGame} style={{
                                 background: 'linear-gradient(135deg,#06b6d4,#0891b2)',
                                 color: 'white', border: 'none', padding: '14px 52px',
                                 borderRadius: 16, fontWeight: 900, fontSize: '1.05rem',
@@ -518,6 +587,50 @@ export function CubeathonGame({
                             }}>
                                 ▶  START RUN
                             </button>
+                        </div>
+                    )}
+
+                    {/* PICKING overlay */}
+                    {phase === 'picking' && (
+                        <div style={{
+                            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                            alignItems: 'center', justifyContent: 'center',
+                            background: 'rgba(2,10,34,0.92)', backdropFilter: 'blur(8px)', borderRadius: 18,
+                            padding: '2rem'
+                        }}>
+                            <h3 style={{ color: 'white', fontSize: '1.8rem', fontWeight: 900, marginBottom: '2rem', letterSpacing: '0.05em' }}>
+                                SELECT SPEED
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', maxWidth: 280 }}>
+                                <button onClick={() => startGame('easy')} style={{
+                                    background: 'linear-gradient(135deg,#10b981,#059669)',
+                                    color: 'white', border: 'none', padding: '16px', borderRadius: 14,
+                                    fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer', transition: 'transform 0.2s'
+                                }}>
+                                    EASY MODE
+                                </button>
+                                <button onClick={() => startGame('normal')} style={{
+                                    background: 'linear-gradient(135deg,#3b82f6,#2563eb)',
+                                    color: 'white', border: 'none', padding: '16px', borderRadius: 14,
+                                    fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer', transition: 'transform 0.2s'
+                                }}>
+                                    MEDIUM MODE
+                                </button>
+                                <button onClick={() => startGame('hard')} style={{
+                                    background: 'linear-gradient(135deg,#ef4444,#dc2626)',
+                                    color: 'white', border: 'none', padding: '16px', borderRadius: 14,
+                                    fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer', transition: 'transform 0.2s'
+                                }}>
+                                    HIGH SPEED MODE
+                                </button>
+
+                                <button onClick={() => setPhase('idle')} style={{
+                                    background: 'transparent', color: '#94a3b8', border: '1px solid #334155',
+                                    padding: '10px', borderRadius: 12, fontWeight: 700, fontSize: '0.75rem', marginTop: 12, cursor: 'pointer'
+                                }}>
+                                    ← BACK
+                                </button>
+                            </div>
                         </div>
                     )}
 
@@ -546,7 +659,7 @@ export function CubeathonGame({
                                 </p>
                             </div>
                             <div style={{ display: 'flex', gap: 16 }}>
-                                <button onClick={startGame} style={{
+                                <button onClick={prepareGame} style={{
                                     background: 'linear-gradient(135deg, #4ade80, #16a34a)', color: 'white', border: 'none',
                                     padding: '16px 48px', borderRadius: 16, fontWeight: 900,
                                     fontSize: '1.2rem', cursor: 'pointer',
