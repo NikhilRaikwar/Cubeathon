@@ -206,23 +206,27 @@ export default function App() {
       const ensureFunded = async (addr: string) => {
         const rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL;
         const server = new StellarRpc.Server(rpcUrl);
+        const horizonUrl = 'https://horizon-testnet.stellar.org';
 
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 10; i++) {
           try {
             await server.getAccount(addr);
-            return; // Account is now visible to the RPC node
+            console.log(`[DevWallet] ${addr.slice(0, 8)} ready ✓`);
+            return;
           } catch (err: any) {
-            const isNotFound = err.message?.includes('404') || err.status === 404 || err.message?.includes('not found');
-            if (isNotFound) {
-              console.info(`[DevWallet] ${addr.slice(0, 8)} missing on RPC. Funding/Polling... (Attempt ${i + 1})`);
-              await fetch(`https://friendbot.stellar.org/?addr=${addr}`).catch(() => { });
-            } else {
-              console.warn(`[DevWallet] RPC check warning for ${addr.slice(0, 8)}:`, err.message);
-            }
+            try {
+              const hResp = await fetch(`${horizonUrl}/accounts/${addr}`);
+              if (hResp.status === 404) {
+                console.info(`[DevWallet] ${addr.slice(0, 8)} missing. Funding via Friendbot...`);
+                await fetch(`https://friendbot.stellar.org/?addr=${addr}`).catch(() => { });
+              } else {
+                console.info(`[DevWallet] ${addr.slice(0, 8)} funded, syncing with RPC... (${i + 1}/10)`);
+              }
+            } catch (e) { console.warn(`[DevWallet] Status check failed, retrying RPC poll...`); }
           }
-          await new Promise(r => setTimeout(r, 5000));
+          await new Promise(r => setTimeout(r, 4000));
         }
-        throw new Error(`Account ${addr.slice(0, 8)}... not ready on RPC after 30s.`);
+        throw new Error(`Account ${addr.slice(0, 8)}... not ready on RPC after 40s.`);
       };
       await ensureFunded(p1Addr);
       await ensureFunded(p2Addr);
